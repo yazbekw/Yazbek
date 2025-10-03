@@ -141,6 +141,13 @@ class FuturesTradingBot:
         FuturesTradingBot._instance = self
         logger.info("✅ تم تهيئة البوت بنجاح")
 
+        try:
+            from web_server import set_bot_instance
+            set_bot_instance(self)
+            logger.info("✅ تم ربط البوت بخادم الويب")
+        except Exception as e:
+            logger.error(f"❌ فشل ربط البوت بخادم الويب: {e}")
+
     def _initialize_notifier(self):
         """تهيئة نظام الإشعارات"""
         if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
