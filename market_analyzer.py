@@ -1,5 +1,6 @@
-from utils import setup_logging, calculate_indicators
+import pandas as pd
 import numpy as np
+from utils import setup_logging, calculate_indicators
 
 logger = setup_logging()
 
@@ -147,3 +148,81 @@ class MarketAnalyzer:
             logger.info("⚠️ تناقض: MACD هابط لكن المتوسطات صاعدة")
     
         return contradictions
+
+    def _confirm_trend_multi_timeframe(self, symbol, direction):
+        """تأكيد الاتجاه من إطارات زمنية متعددة"""
+        try:
+            # الحصول على بيانات من إطار زمني أعلى (1 ساعة) للتأكيد
+            hourly_data = self.get_historical_data(symbol, '1h', 50)
+            if hourly_data is None or len(hourly_data) < 20:
+                return True  # إذا فشل الجلب، نعتبر أنه لا تناقض
+            
+            hourly_data = calculate_indicators(hourly_data)
+            if len(hourly_data) == 0:
+                return True
+            
+            latest_hourly = hourly_data.iloc[-1]
+        
+            # التحقق من تطابق الاتجاه
+            if direction == 'LONG':
+                trend_confirmed = latest_hourly['sma10'] > latest_hourly['sma50']
+            else:  # SHORT
+                trend_confirmed = latest_hourly['sma10'] < latest_hourly['sma50']
+        
+            return trend_confirmed
+        
+        except Exception as e:
+            logger.error(f"❌ خطأ في تأكيد الاتجاه متعدد الإطار لـ {symbol}: {e}")
+            return True  # في حالة الخطأ، نعتبر أنه لا مشكلة
+
+    def get_market_health(self, symbol):
+        """الحصول على صحة السوق للرمز"""
+        try:
+            data = self.get_historical_data(symbol, '1h', 100)
+            if data is None:
+                return {'health': 'unknown', 'volatility': 0, 'trend': 'neutral'}
+            
+            data = calculate_indicators(data)
+            if len(data) < 20:
+                return {'health': 'unknown', 'volatility': 0, 'trend': 'neutral'}
+            
+            latest = data.iloc[-1]
+            
+            # حساب التقلبات
+            volatility = (latest['high'] - latest['low']) / latest['close'] * 100
+            
+            # تحديد الاتجاه
+            if latest['sma10'] > latest['sma50']:
+                trend = 'bullish'
+            elif latest['sma10'] < latest['sma50']:
+                trend = 'bearish'
+            else:
+                trend = 'neutral'
+            
+            # تقييم صحة السوق
+            health_score = 0
+            if 30 <= latest['rsi'] <= 70:
+                health_score += 1
+            if volatility < 10:  # تقلبات معقولة
+                health_score += 1
+            if latest['volume_ratio'] > 0.8:
+                health_score += 1
+            
+            if health_score >= 2:
+                health = 'healthy'
+            elif health_score == 1:
+                health = 'moderate'
+            else:
+                health = 'risky'
+            
+            return {
+                'health': health,
+                'volatility': volatility,
+                'trend': trend,
+                'rsi': latest['rsi'],
+                'volume_ratio': latest['volume_ratio']
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في تحليل صحة السوق لـ {symbol}: {e}")
+            return {'health': 'unknown', 'volatility': 0, 'trend': 'neutral'}
