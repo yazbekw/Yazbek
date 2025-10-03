@@ -16,7 +16,7 @@ BINANCE_API_SECRET = os.environ.get('BINANCE_API_SECRET')
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
-# إعدادات التداول
+# إعدادات التداول - تم إصلاح المشكلة هنا
 TRADING_SETTINGS = {
     'symbols': ["LINKUSDT", "SOLUSDT", "ETHUSDT", "BNBUSDT"],
     'weights': {'LINKUSDT': 1.4, 'SOLUSDT': 1.2, 'ETHUSDT': 1.0, 'BNBUSDT': 0.7},
