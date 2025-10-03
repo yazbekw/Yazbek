@@ -105,11 +105,13 @@ class TradeManager:
     def add_trade(self, symbol, trade_data):
         """إضافة صفقة جديدة"""
         self.active_trades[symbol] = trade_data
+        logger.info(f"✅ تم إضافة صفقة جديدة: {symbol}")
     
     def remove_trade(self, symbol):
         """إزالة صفقة"""
         if symbol in self.active_trades:
             del self.active_trades[symbol]
+            logger.info(f"✅ تم إزالة صفقة: {symbol}")
     
     def get_trade(self, symbol):
         """الحصول على بيانات صفقة"""
@@ -118,3 +120,27 @@ class TradeManager:
     def get_all_trades(self):
         """الحصول على جميع الصفقات النشطة"""
         return self.active_trades.copy()
+    
+    def get_trade_history(self, limit=50):
+        """الحصول على سجل الصفقات"""
+        return self.trade_history[-limit:] if self.trade_history else []
+    
+    def update_trade(self, symbol, updates):
+        """تحديث بيانات صفقة"""
+        if symbol in self.active_trades:
+            self.active_trades[symbol].update(updates)
+            return True
+        return False
+    
+    def get_trade_statistics(self):
+        """الحصول على إحصائيات الصفقات"""
+        total_trades = len(self.trade_history) + len(self.active_trades)
+        active_trades = len(self.active_trades)
+        closed_trades = len(self.trade_history)
+        
+        return {
+            'total_trades': total_trades,
+            'active_trades': active_trades,
+            'closed_trades': closed_trades,
+            'last_sync': self.last_sync
+        }
