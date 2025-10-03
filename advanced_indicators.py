@@ -2,6 +2,9 @@ import pandas as pd
 import numpy as np
 from scipy.signal import find_peaks
 from typing import Dict, Any, List, Tuple
+import logging
+
+logger = logging.getLogger(__name__)
 
 class AdvancedMarketAnalyzer:
     """محلل متقدم لمراحل السوق بناءً على نظريات متعددة"""
@@ -25,12 +28,40 @@ class AdvancedMarketAnalyzer:
     
     def analyze_market_phase(self, prices: List[float], highs: List[float], 
                            lows: List[float], volumes: List[float]) -> Dict[str, Any]:
-        """تحليل متكامل لمرحلة السوق"""
-        if len(prices) < 50:
+        """تحليل متكامل لمرحلة السوق مع معالجة أخطاء محسنة"""
+        
+        # فحص جودة البيانات بشكل محسن
+        if len(prices) < 30:  # تقليل الحد الأدنى من 50 إلى 30
+            logger.warning(f"⚠️ بيانات غير كافية للتحليل المتقدم: {len(prices)} نقطة")
+            return self._default_analysis()
+        
+        # فحص وجود قيم صفرية أو غير صالحة
+        if not prices or any(price <= 0 for price in prices[-10:]) or len(set(prices)) < 5:
+            logger.error("❌ بيانات أسعار غير صالحة للتحليل - قيم متطابقة أو صفرية")
+            return self._default_analysis()
+        
+        # فحص أن البيانات ليست ثابتة (لا توجد حركة)
+        price_volatility = np.std(prices) / np.mean(prices) if np.mean(prices) > 0 else 0
+        if price_volatility < 0.001:  # إذا كانت التقلبات أقل من 0.1%
+            logger.warning("⚠️ بيانات سوق غير نشطة - تقلبات ضعيفة جداً")
             return self._default_analysis()
         
         try:
             df = self._create_dataframe(prices, highs, lows, volumes)
+            
+            # فحص جودة DataFrame بشكل أعمق
+            if df.empty or len(df) < 20:
+                logger.warning("⚠️ DataFrame فارغ أو صغير جداً")
+                return self._default_analysis()
+                
+            # فحص وجود قيم NaN في الأعمدة المهمة
+            critical_columns = ['close', 'high', 'low', 'volume']
+            for col in critical_columns:
+                if df[col].isnull().any() or df[col].isna().any():
+                    logger.warning(f"⚠️ قيم NaN في العمود {col}")
+                    return self._default_analysis()
+            
+            # متابعة التحليل الطبيعي
             analysis_results = {}
             
             # تحليل وايكوف (الأهم)
@@ -50,10 +81,15 @@ class AdvancedMarketAnalyzer:
             
             # دمج النتائج
             final_analysis = self._combine_analyses(analysis_results)
-            return final_analysis
             
+            # فحص جودة النتيجة النهائية
+            if final_analysis['confidence'] < 0.1:  # إذا كانت الثقة ضعيفة جداً
+                logger.warning(f"⚠️ ثقة تحليل منخفضة: {final_analysis['confidence']}")
+                
+            return final_analysis
+                
         except Exception as e:
-            print(f"❌ خطأ في التحليل المتقدم: {e}")
+            logger.error(f"❌ خطأ في التحليل المتقدم: {e}")
             return self._default_analysis()
     
     def _wyckoff_analysis(self, df) -> Dict[str, Any]:
@@ -294,49 +330,101 @@ class AdvancedMarketAnalyzer:
         return decisions.get(phase, 'انتظار')
     
     def _create_dataframe(self, prices, highs, lows, volumes):
-        """إنشاء DataFrame مع جميع المؤشرات"""
-        df = pd.DataFrame({
-            'close': prices, 'high': highs, 'low': lows, 'volume': volumes
-        })
-        
-        # المؤشرات الأساسية
-        df['sma20'] = df['close'].rolling(20).mean()
-        df['sma50'] = df['close'].rolling(50).mean()
-        
-        # RSI
-        delta = df['close'].diff()
-        gain = delta.where(delta > 0, 0)
-        loss = (-delta).where(delta < 0, 0)
-        avg_gain = gain.rolling(14).mean()
-        avg_loss = loss.rolling(14).mean()
-        rs = avg_gain / (avg_loss + 1e-10)
-        df['rsi'] = 100 - (100 / (1 + rs))
-        
-        # الحجم والمتغيرات الأخرى
-        df['volume_ratio'] = df['volume'] / df['volume'].rolling(20).mean()
-        df['volatility'] = df['close'].rolling(20).std() / df['close'].rolling(20).mean()
-        df['spread'] = df['high'] - df['low']
-        
-        # MACD
-        ema12 = df['close'].ewm(span=12, adjust=False).mean()
-        ema26 = df['close'].ewm(span=26, adjust=False).mean()
-        df['macd'] = ema12 - ema26
-        df['macd_signal'] = df['macd'].ewm(span=9, adjust=False).mean()
-        df['macd_hist'] = df['macd'] - df['macd_signal']
-        
-        # Bollinger Bands
-        df['bb_middle'] = df['close'].rolling(20).mean()
-        df['bb_std'] = df['close'].rolling(20).std()
-        df['bb_upper'] = df['bb_middle'] + (df['bb_std'] * 2)
-        df['bb_lower'] = df['bb_middle'] - (df['bb_std'] * 2)
-        
-        # Ichimoku
-        df['tenkan_sen'] = (df['high'].rolling(9).max() + df['low'].rolling(9).min()) / 2
-        df['kijun_sen'] = (df['high'].rolling(26).max() + df['low'].rolling(26).min()) / 2
-        df['senkou_span_a'] = ((df['tenkan_sen'] + df['kijun_sen']) / 2).shift(26)
-        df['senkou_span_b'] = ((df['high'].rolling(52).max() + df['low'].rolling(52).min()) / 2).shift(26)
-        
-        return df.dropna()
+        """إنشاء DataFrame مع جميع المؤشرات ومعالجة الأخطاء"""
+        try:
+            df = pd.DataFrame({
+                'close': prices, 'high': highs, 'low': lows, 'volume': volumes
+            })
+            
+            # تنظيف البيانات - إزالة القيم غير الصالحة
+            df = df.replace([np.inf, -np.inf], np.nan)
+            df = df.dropna()
+            
+            if len(df) < 20:
+                return df  # إرجاع ما تبقى من البيانات
+            
+            # المؤشرات الأساسية مع معالجة الأخطاء
+            try:
+                df['sma20'] = df['close'].rolling(20, min_periods=10).mean()
+                df['sma50'] = df['close'].rolling(50, min_periods=20).mean()
+            except Exception as e:
+                logger.warning(f"⚠️ خطأ في حساب المتوسطات: {e}")
+                df['sma20'] = df['close']
+                df['sma50'] = df['close']
+            
+            # RSI مع معالجة الأخطاء
+            try:
+                delta = df['close'].diff()
+                gain = delta.where(delta > 0, 0)
+                loss = (-delta).where(delta < 0, 0)
+                avg_gain = gain.rolling(14, min_periods=7).mean()
+                avg_loss = loss.rolling(14, min_periods=7).mean()
+                rs = avg_gain / (avg_loss + 1e-10)  # تجنب القسمة على صفر
+                df['rsi'] = 100 - (100 / (1 + rs))
+            except Exception as e:
+                logger.warning(f"⚠️ خطأ في حساب RSI: {e}")
+                df['rsi'] = 50  # قيمة محايدة
+            
+            # الحجم والمتغيرات الأخرى
+            try:
+                df['volume_ratio'] = df['volume'] / df['volume'].rolling(20, min_periods=10).mean()
+                df['volatility'] = df['close'].rolling(20, min_periods=10).std() / df['close'].rolling(20, min_periods=10).mean()
+                df['spread'] = df['high'] - df['low']
+            except Exception as e:
+                logger.warning(f"⚠️ خطأ في حساب الحجم والتقلبات: {e}")
+                df['volume_ratio'] = 1.0
+                df['volatility'] = 0.01
+                df['spread'] = df['close'] * 0.01
+            
+            # MACD مع معالجة الأخطاء
+            try:
+                ema12 = df['close'].ewm(span=12, adjust=False, min_periods=6).mean()
+                ema26 = df['close'].ewm(span=26, adjust=False, min_periods=13).mean()
+                df['macd'] = ema12 - ema26
+                df['macd_signal'] = df['macd'].ewm(span=9, adjust=False, min_periods=4).mean()
+                df['macd_hist'] = df['macd'] - df['macd_signal']
+            except Exception as e:
+                logger.warning(f"⚠️ خطأ في حساب MACD: {e}")
+                df['macd'] = 0
+                df['macd_signal'] = 0
+                df['macd_hist'] = 0
+            
+            # Bollinger Bands مع معالجة الأخطاء
+            try:
+                df['bb_middle'] = df['close'].rolling(20, min_periods=10).mean()
+                df['bb_std'] = df['close'].rolling(20, min_periods=10).std()
+                df['bb_upper'] = df['bb_middle'] + (df['bb_std'] * 2)
+                df['bb_lower'] = df['bb_middle'] - (df['bb_std'] * 2)
+            except Exception as e:
+                logger.warning(f"⚠️ خطأ في حساب Bollinger Bands: {e}")
+                df['bb_middle'] = df['close']
+                df['bb_std'] = df['close'] * 0.1
+                df['bb_upper'] = df['close'] * 1.2
+                df['bb_lower'] = df['close'] * 0.8
+            
+            # Ichimoku مع معالجة الأخطاء
+            try:
+                df['tenkan_sen'] = (df['high'].rolling(9, min_periods=4).max() + df['low'].rolling(9, min_periods=4).min()) / 2
+                df['kijun_sen'] = (df['high'].rolling(26, min_periods=13).max() + df['low'].rolling(26, min_periods=13).min()) / 2
+                df['senkou_span_a'] = ((df['tenkan_sen'] + df['kijun_sen']) / 2).shift(26)
+                df['senkou_span_b'] = ((df['high'].rolling(52, min_periods=26).max() + df['low'].rolling(52, min_periods=26).min()) / 2).shift(26)
+            except Exception as e:
+                logger.warning(f"⚠️ خطأ في حساب Ichimoku: {e}")
+                df['tenkan_sen'] = df['close']
+                df['kijun_sen'] = df['close']
+                df['senkou_span_a'] = df['close']
+                df['senkou_span_b'] = df['close']
+            
+            return df.fillna(method='ffill').fillna(method='bfill')
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ فادح في إنشاء DataFrame: {e}")
+            # إرجاع DataFrame أساسي كبديل
+            return pd.DataFrame({
+                'close': prices[-50:], 'high': highs[-50:], 'low': lows[-50:], 'volume': volumes[-50:],
+                'sma20': prices[-50:], 'sma50': prices[-50:], 'rsi': 50, 'volume_ratio': 1.0,
+                'volatility': 0.01, 'spread': 0.0, 'macd': 0, 'macd_signal': 0, 'macd_hist': 0
+            })
     
     def _default_analysis(self):
         """تحليل افتراضي عند عدم وجود بيانات كافية"""
