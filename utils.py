@@ -2,10 +2,10 @@ import logging
 import warnings
 import hashlib
 import time
-import requests
 import pandas as pd
 import numpy as np
 from datetime import datetime
+from config import LOG_LEVEL, LOG_FORMAT, LOG_FILE, DAMASCUS_TZ
 
 # إخفاء التحذيرات
 warnings.filterwarnings('ignore')
@@ -13,10 +13,10 @@ warnings.filterwarnings('ignore')
 def setup_logging():
     """إعداد نظام التسجيل"""
     logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
+        level=getattr(logging, LOG_LEVEL),
+        format=LOG_FORMAT,
         handlers=[
-            logging.FileHandler('futures_bot.log', encoding='utf-8'),
+            logging.FileHandler(LOG_FILE, encoding='utf-8'),
             logging.StreamHandler()
         ]
     )
@@ -68,3 +68,21 @@ def calculate_indicators(data):
 def generate_message_hash(message_type, message):
     """إنشاء هاش للرسائل لمنع التكرار"""
     return hashlib.md5(f"{message_type}_{message}".encode()).hexdigest()
+
+def format_currency(amount):
+    """تنسيق المبالغ المالية"""
+    return f"${amount:.2f}"
+
+def format_percentage(value):
+    """تنسيق النسب المئوية"""
+    return f"{value:.2f}%"
+
+def get_current_time():
+    """الحصول على الوقت الحالي بتوقيت دمشق"""
+    return datetime.now(DAMASCUS_TZ)
+
+def calculate_trade_age(trade_timestamp):
+    """حساب عمر الصفقة"""
+    current_time = get_current_time()
+    age = current_time - trade_timestamp
+    return age.total_seconds() / 3600  # العمر بالساعات
