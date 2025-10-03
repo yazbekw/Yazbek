@@ -48,3 +48,8 @@ TRADING_SETTINGS = {
 # إعدادات Flask
 FLASK_PORT = int(os.environ.get('PORT', 10000))
 FLASK_HOST = '0.0.0.0'
+
+# إعدادات التسجيل
+LOG_LEVEL = 'INFO'
+LOG_FORMAT = '%(asctime)s - %(levelname)s - %(message)s'
+LOG_FILE = 'futures_bot.log'
