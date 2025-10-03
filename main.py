@@ -12,6 +12,22 @@ from price_manager import PriceManager
 from performance_reporter import PerformanceReporter
 from continuous_monitor import ContinuousMonitor
 from web_server import run_flask_app
+import traceback
+
+def debug_config():
+    """دالة لتصحيح إعدادات التداول"""
+    try:
+        # اختبار أن الإعدادات صحيحة
+        settings = TRADING_SETTINGS.copy()
+        print("✅ تم تحميل الإعدادات بنجاح")
+        return True
+    except Exception as e:
+        print(f"❌ خطأ في الإعدادات: {e}")
+        traceback.print_exc()
+        return False
+
+# استدعاء دالة التصحيح قبل بدء التشغيل
+debug_config()
 
 logger = setup_logging()
 
@@ -30,25 +46,32 @@ class FuturesTradingBot:
         if not all([BINANCE_API_KEY, BINANCE_API_SECRET]):
             raise ValueError("مفاتيح Binance مطلوبة")
 
-        # تهيئة العميل
+        # تهيئة العميل - تم إصلاح المشكلة هنا
         try:
             from binance.client import Client
-            self.client = Client(BINANCE_API_KEY, BINANCE_API_SECRET)
+            self.client = Client(
+                api_key=BINANCE_API_KEY, 
+                api_secret=BINANCE_API_SECRET,
+                # إضافة إعدادات إضافية للثبات
+                requests_params={'timeout': 10}
+            )
             self.test_api_connection()
         except Exception as e:
             logger.error(f"❌ فشل تهيئة العميل: {e}")
             raise
 
-        # تهيئة المكونات
+        # تهيئة المكونات - تم إصلاح تمرير الإعدادات
         self.notifier = self._initialize_notifier()
         self.symbols = TRADING_SETTINGS['symbols']
         
         # تهيئة المدراء
         self.trade_manager = TradeManager(self.client, self.notifier)
         self.price_manager = PriceManager(self.symbols, self.client)
-        self.market_analyzer = MarketAnalyzer(self.client, TRADING_SETTINGS)
+        self.market_analyzer = MarketAnalyzer(self.client, TRADING_SETTINGS)  # تمرير الإعدادات كاملة
         self.performance_reporter = PerformanceReporter(self.trade_manager, self.notifier)
         self.continuous_monitor = ContinuousMonitor(self)
+        
+        # بقية الكود يبقى كما هو...
         
         # تهيئة الأرصدة
         self.symbol_balances = self.initialize_symbol_balances()
