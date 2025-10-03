@@ -1,79 +1,9 @@
-import os
-import traceback
-import pandas as pd
-import numpy as np
-import hashlib
-from binance.client import Client
-from binance.enums import *
-import time
-from datetime import datetime, timedelta
-import requests
-import logging
-import warnings
-warnings.filterwarnings('ignore')
-from dotenv import load_dotenv
 import threading
+import time
 import schedule
-from flask import Flask, jsonify
-import pytz
+from datetime import datetime
+import numpy as np
 
-# تشخيص مفصل للخطأ
-def debug_initialization():
-    """دالة تشخيصية مفصلة"""
-    print("🔍 بدء التشخيص التفصيلي...")
-    
-    try:
-        # 1. فحص متغيرات البيئة
-        print("1. فحص متغيرات البيئة...")
-        load_dotenv()
-        api_key = os.environ.get('BINANCE_API_KEY')
-        api_secret = os.environ.get('BINANCE_API_SECRET')
-        
-        print(f"   API_KEY موجود: {bool(api_key)}")
-        print(f"   API_SECRET موجود: {bool(api_secret)}")
-        
-        if not api_key or not api_secret:
-            raise ValueError("مفاتيح API غير مكتملة")
-        
-        # 2. فحص إعدادات التداول
-        print("2. فحص إعدادات التداول...")
-        from config import TRADING_SETTINGS
-        
-        # فحص أن جميع المفاتيح قابلة للتجزئة
-        for key, value in TRADING_SETTINGS.items():
-            print(f"   المفتاح: {key}, النوع: {type(key)}, القيمة: {value}")
-            # محاولة استخدام المفتاح في مجموعة (سيظهر الخطأ هنا إذا كان غير قابل للتجزئة)
-            test_set = set()
-            test_set.add(key)  # إذا فشل هنا، سيعرفنا على المفتاح المشكلة
-        
-        print("✅ جميع المفاتيح قابلة للتجزئة")
-        
-        # 3. فحص تهيئة العميل
-        print("3. فحص تهيئة عميل Binance...")
-        client = Client(api_key, api_secret)
-        server_time = client.futures_time()
-        print("✅ اتصال Binance API ناجح")
-        
-        return True
-        
-    except Exception as e:
-        print(f"❌ خطأ في التشخيص: {e}")
-        print("🔍 تتبع الخطأ:")
-        traceback.print_exc()
-        return False
-
-# تشغيل التشخيص قبل أي شيء
-print("🚀 بدء تشخيص البوت...")
-debug_success = debug_initialization()
-
-if not debug_success:
-    print("❌ فشل التشخيص، إيقاف البوت...")
-    exit(1)
-
-# ثم استمر في بقية الكود...
-print("✅ التشخيص ناجح، متابعة التشغيل...")
-
-# بقية imports
 from config import *
 from utils import setup_logging
 from notifications import TelegramNotifier
@@ -83,10 +13,9 @@ from price_manager import PriceManager
 from performance_reporter import PerformanceReporter
 from continuous_monitor import ContinuousMonitor
 from web_server import run_flask_app
+from advanced_indicators import AdvancedMarketAnalyzer
 
 logger = setup_logging()
-
-# ثم بقية الكود كما هو...
 
 class FuturesTradingBot:
     _instance = None
@@ -99,33 +28,30 @@ class FuturesTradingBot:
         if FuturesTradingBot._instance is not None:
             raise Exception("هذه الفئة تستخدم نمط Singleton")
 
-        # تحميل المفاتيح من البيئة مباشرة (كما في الأصل)
-        self.api_key = os.environ.get('BINANCE_API_KEY')
-        self.api_secret = os.environ.get('BINANCE_API_SECRET')
-
-        if not all([self.api_key, self.api_secret]):
+        # التحقق من المفاتيح
+        if not all([BINANCE_API_KEY, BINANCE_API_SECRET]):
             raise ValueError("مفاتيح Binance مطلوبة")
 
-        # تهيئة العميل بنفس الطريقة الأصلية
+        # تهيئة العميل
         try:
-            self.client = Client(self.api_key, self.api_secret)
+            from binance.client import Client
+            self.client = Client(BINANCE_API_KEY, BINANCE_API_SECRET)
             self.test_api_connection()
         except Exception as e:
             logger.error(f"❌ فشل تهيئة العميل: {e}")
             raise
 
-        # تهيئة المكونات - تم إصلاح تمرير الإعدادات
+        # تهيئة المكونات
         self.notifier = self._initialize_notifier()
         self.symbols = TRADING_SETTINGS['symbols']
         
         # تهيئة المدراء
         self.trade_manager = TradeManager(self.client, self.notifier)
         self.price_manager = PriceManager(self.symbols, self.client)
-        self.market_analyzer = MarketAnalyzer(self.client, TRADING_SETTINGS)  # تمرير الإعدادات كاملة
+        self.market_analyzer = MarketAnalyzer(self.client, TRADING_SETTINGS)
         self.performance_reporter = PerformanceReporter(self.trade_manager, self.notifier)
         self.continuous_monitor = ContinuousMonitor(self)
-        
-        # بقية الكود يبقى كما هو...
+        self.advanced_analyzer = AdvancedMarketAnalyzer()  # المحلل المتقدم
         
         # تهيئة الأرصدة
         self.symbol_balances = self.initialize_symbol_balances()
@@ -140,13 +66,6 @@ class FuturesTradingBot:
 
         FuturesTradingBot._instance = self
         logger.info("✅ تم تهيئة البوت بنجاح")
-
-        try:
-            from web_server import set_bot_instance
-            set_bot_instance(self)
-            logger.info("✅ تم ربط البوت بخادم الويب")
-        except Exception as e:
-            logger.error(f"❌ فشل ربط البوت بخادم الويب: {e}")
 
     def _initialize_notifier(self):
         """تهيئة نظام الإشعارات"""
@@ -231,12 +150,17 @@ class FuturesTradingBot:
         """إرسال رسالة بدء التشغيل"""
         if self.notifier:
             message = (
-                "🚀 <b>بدء تشغيل بوت العقود الآجلة - النسخة المحسنة</b>\n\n"
+                "🚀 <b>بدء تشغيل بوت العقود الآجلة - النسخة المتقدمة</b>\n\n"
                 f"📊 <b>الميزات الجديدة:</b>\n"
-                f"• نظام مزامنة دقيق للصفقات\n"
-                f"• تحسين جودة الإشارات\n"
-                f"• إدارة محسنة للموارد\n"
-                f"• تقارير أداء دقيقة\n\n"
+                f"• نظام تحليل مراحل السوق المتقدم\n"
+                f"• دمج نظريات وايكوف، إليوت، VSA، إيشيموكو\n"
+                f"• نسب مساهمة محسنة في قرارات التداول\n"
+                f"• إدارة مخاطر محسنة بناءً على مراحل السوق\n\n"
+                f"🎯 <b>نسب المساهمة في القرار:</b>\n"
+                f"• الصعود القوي: 30%\n"
+                f"• الهبوط القوي: 25%\n"
+                f"• التجميع: 10%\n"
+                f"• التوزيع: 10%\n\n"
                 f"🕒 <b>وقت البدء:</b>\n"
                 f"{datetime.now(DAMASCUS_TZ).strftime('%Y-%m-%d %H:%M:%S')}"
             )
@@ -266,7 +190,22 @@ class FuturesTradingBot:
 
     def get_historical_data(self, symbol, interval='30m', limit=100):
         """جلب البيانات التاريخية"""
-        return self.market_analyzer.get_historical_data(symbol, interval, limit)
+        try:
+            klines = self.client.futures_klines(symbol=symbol, interval=interval, limit=limit)
+            
+            data = pd.DataFrame(klines, columns=[
+                'timestamp', 'open', 'high', 'low', 'close', 'volume',
+                'close_time', 'quote_volume', 'trades', 'taker_buy_base',
+                'taker_buy_quote', 'ignore'
+            ])
+            
+            for col in ['open', 'high', 'low', 'close', 'volume']:
+                data[col] = data[col].astype(float)
+            
+            return data
+        except Exception as e:
+            logger.error(f"❌ خطأ في جلب البيانات لـ {symbol}: {e}")
+            return None
 
     def calculate_indicators(self, data):
         """حساب المؤشرات الفنية"""
@@ -274,11 +213,133 @@ class FuturesTradingBot:
         return calculate_indicators(data)
 
     def analyze_symbol(self, symbol):
-        """تحليل الرمز"""
+        """تحليل الرمز التقليدي"""
         return self.market_analyzer.analyze_symbol(symbol)
 
+    def advanced_analyze_symbol(self, symbol):
+        """تحليل متقدم يجمع بين التحليل التقليدي ومراحل السوق"""
+        try:
+            # التحليل التقليدي
+            has_technical_signal, technical_analysis, technical_direction = self.analyze_symbol(symbol)
+            
+            # التحليل المتقدم لمراحل السوق (بيانات يومية للرؤية طويلة المدى)
+            daily_data = self.get_historical_data(symbol, '1d', 100)
+            if daily_data is not None:
+                advanced_analysis = self.advanced_analyzer.analyze_market_phase(
+                    daily_data['close'].tolist(),
+                    daily_data['high'].tolist(), 
+                    daily_data['low'].tolist(),
+                    daily_data['volume'].tolist()
+                )
+                
+                # دمج القرارات بناءً على نسب المساهمة المطلوبة
+                final_decision = self._combine_decisions_with_weights(
+                    has_technical_signal, technical_direction, technical_analysis, advanced_analysis
+                )
+                return final_decision
+            
+            # إذا فشل التحليل المتقدم، نعود للتحليل التقليدي
+            return has_technical_signal, technical_analysis, technical_direction
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في التحليل المتقدم لـ {symbol}: {e}")
+            # العودة للتحليل التقليدي في حالة الخطأ
+            return self.analyze_symbol(symbol)
+
+    def _combine_decisions_with_weights(self, has_technical_signal, direction, technical_analysis, advanced_analysis):
+        """دمج قرارات التحليل التقني والمتadvanced بنسب المساهمة المطلوبة"""
+        
+        phase = advanced_analysis['phase']
+        confidence = advanced_analysis['confidence']
+        
+        # نسب المساهمة المطلوبة
+        WEIGHTS = {
+            'markup': 0.30,      # الصعود القوي
+            'markdown': 0.25,    # الهبوط القوي
+            'accumulation': 0.10, # التجميع
+            'distribution': 0.10  # التوزيع
+        }
+        
+        # إذا كان هناك إشارة تقنية
+        if has_technical_signal:
+            base_signal_strength = technical_analysis.get('signal_strength', 50)
+            
+            # تطبيق نسب المساهمة بناءً على مرحلة السوق
+            if phase == 'markup' and direction == 'LONG':
+                # تأكيد قوي للشراء - زيادة القوة
+                multiplier = 1.0 + WEIGHTS['markup']
+                technical_analysis['signal_strength'] = base_signal_strength * multiplier
+                technical_analysis['phase_confirmation'] = True
+                technical_analysis['market_phase'] = phase
+                technical_analysis['phase_confidence'] = confidence
+                logger.info(f"✅ تأكيد قوي لشراء {symbol} - مرحلة صعود قوي")
+                
+            elif phase == 'markdown' and direction == 'SHORT':
+                # تأكيد قوي للبيع - زيادة القوة
+                multiplier = 1.0 + WEIGHTS['markdown']
+                technical_analysis['signal_strength'] = base_signal_strength * multiplier
+                technical_analysis['phase_confirmation'] = True
+                technical_analysis['market_phase'] = phase
+                technical_analysis['phase_confidence'] = confidence
+                logger.info(f"✅ تأكيد قوي لبيع {symbol} - مرحلة هبوط قوي")
+                
+            elif phase == 'accumulation' and direction == 'LONG':
+                # تأكيد متوسط للشراء
+                multiplier = 1.0 + WEIGHTS['accumulation']
+                technical_analysis['signal_strength'] = base_signal_strength * multiplier
+                technical_analysis['phase_confirmation'] = True
+                technical_analysis['market_phase'] = phase
+                technical_analysis['phase_confidence'] = confidence
+                logger.info(f"⚠️ تأكيد متوسط لشراء {symbol} - مرحلة تجميع")
+                
+            elif phase == 'distribution' and direction == 'SHORT':
+                # تأكيد متوسط للبيع
+                multiplier = 1.0 + WEIGHTS['distribution']
+                technical_analysis['signal_strength'] = base_signal_strength * multiplier
+                technical_analysis['phase_confirmation'] = True
+                technical_analysis['market_phase'] = phase
+                technical_analysis['phase_confidence'] = confidence
+                logger.info(f"⚠️ تأكيد متوسط لبيع {symbol} - مرحلة توزيع")
+                
+            else:
+                # تعارض بين التحليل التقني ومرحلة السوق - تخفيف الإشارة
+                technical_analysis['signal_strength'] = base_signal_strength * 0.6
+                technical_analysis['phase_confirmation'] = False
+                technical_analysis['market_phase'] = phase
+                technical_analysis['phase_confidence'] = confidence
+                technical_analysis['warning'] = f'تعارض مع مرحلة السوق: {phase}'
+                logger.warning(f"⚠️ تعارض إشارة {direction} لـ {symbol} مع مرحلة {phase}")
+            
+            return True, technical_analysis, direction
+        
+        # إذا لم تكن هناك إشارة تقنية ولكن هناك إشارة قوية من التحليل المتقدم
+        elif confidence > 0.7:
+            if phase == 'markup':
+                # إشارة شراء قوية من التحليل المتقدم
+                logger.info(f"🎯 إشارة شراء من التحليل المتadvanced لـ {symbol} - مرحلة صعود قوي")
+                return True, {
+                    'signal_strength': confidence * 80,
+                    'advanced_signal': True,
+                    'market_phase': phase,
+                    'phase_confidence': confidence,
+                    'indicators': advanced_analysis.get('detailed_analysis', {})
+                }, 'LONG'
+                
+            elif phase == 'markdown':
+                # إشارة بيع قوية من التحليل المتقدم
+                logger.info(f"🎯 إشارة بيع من التحليل المتadvanced لـ {symbol} - مرحلة هبوط قوي")
+                return True, {
+                    'signal_strength': confidence * 80,
+                    'advanced_signal': True,
+                    'market_phase': phase,
+                    'phase_confidence': confidence,
+                    'indicators': advanced_analysis.get('detailed_analysis', {})
+                }, 'SHORT'
+        
+        return has_technical_signal, technical_analysis, direction
+
     def should_accept_signal(self, symbol, direction, analysis):
-        """فلاتر الجودة المحسنة للإشارات"""
+        """فلاتر الجودة المحسنة مع مراعاة مراحل السوق"""
         # تجنب الذروة في RSI
         if analysis['rsi'] > 70 and direction == 'LONG':
             logger.info(f"⏸️ تجنب LONG - RSI مرتفع: {analysis['rsi']:.1f}")
@@ -303,7 +364,7 @@ class FuturesTradingBot:
             logger.info(f"⏸️ سعر بعيد عن المتوسط: {analysis['price_vs_sma20']:.1f}%")
             return False
     
-        # شرط الزخم - أكثر صرامة
+        # شرط الزخم
         if direction == 'LONG' and analysis['momentum'] < 0.001:
             logger.info(f"⏸️ تجنب LONG - زخم ضعيف: {analysis['momentum']:.4f}")
             return False
@@ -312,7 +373,7 @@ class FuturesTradingBot:
             logger.info(f"⏸️ تجنب SHORT - زخم ضعيف: {analysis['momentum']:.4f}")
             return False
     
-        # شرط حجم أقوى
+        # شرط حجم
         if analysis['volume_ratio'] < 0.9:
             logger.info(f"⏸️ حجم تداول ضعيف: {analysis['volume_ratio']:.2f}")
             return False
@@ -331,51 +392,60 @@ class FuturesTradingBot:
         return True
 
     def send_enhanced_trade_signal_notification(self, symbol, direction, analysis, can_trade, reasons=None):
-        """إشعار إشارة تداول محسن مع تحذيرات التناقض"""
+        """إشعار إشارة تداول محسن مع معلومات مراحل السوق"""
         if not self.notifier:
             return
         
         try:
-            contradiction_score = self.market_analyzer._detect_contradictions(analysis, direction)
-            has_contradictions = contradiction_score >= 1
-        
-            if can_trade and not has_contradictions:
+            market_phase = analysis.get('market_phase', 'غير محدد')
+            phase_confidence = analysis.get('phase_confidence', 0)
+            phase_confirmation = analysis.get('phase_confirmation', False)
+            advanced_signal = analysis.get('advanced_signal', False)
+            
+            if can_trade and phase_confirmation:
                 message = (
-                    f"🔔 <b>إشارة تداول قوية - جاهزة للتنفيذ</b>\n"
+                    f"🎯 <b>إشارة تداول قوية - تأكيد مرحلة السوق</b>\n"
                     f"العملة: {symbol}\n"
                     f"الاتجاه: {direction}\n"
+                    f"مرحلة السوق: {market_phase}\n"
+                    f"ثقة المرحلة: {phase_confidence*100}%\n"
                     f"قوة الإشارة: {analysis['signal_strength']:.1f}%\n"
                     f"السعر الحالي: ${analysis['price']:.4f}\n"
                     f"الرصيد المتاح: ${self.symbol_balances.get(symbol, 0):.2f}\n"
                     f"الوقت: {datetime.now(DAMASCUS_TZ).strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+                    f"<b>تفاصيل المرحلة:</b>\n"
+                    f"• مرحلة {market_phase} تدعم اتجاه {direction}\n"
+                    f"• ثقة عالية في تحليل مراحل السوق\n"
+                    f"• إشارة مدعومة بنظريات وايكوف وإليوت\n\n"
                     f"<b>تفاصيل المؤشرات:</b>\n"
-                    f"• SMA10: {analysis['sma10']:.4f}\n"
-                    f"• SMA20: {analysis['sma20']:.4f}\n"
-                    f"• SMA50: {analysis['sma50']:.4f}\n"
-                    f"• RSI: {analysis['rsi']:.2f}\n"
-                    f"• Momentum: {analysis['momentum']:.4f}\n"
-                    f"• Volume Ratio: {analysis['volume_ratio']:.2f}\n"
-                    f"• MACD: {analysis['macd']:.4f}"
+                    f"• RSI: {analysis['rsi']:.1f}\n"
+                    f"• نسبة الحجم: {analysis['volume_ratio']:.2f}\n"
+                    f"• الزخم: {analysis['momentum']:.4f}\n"
+                    f"• اتجاه: {analysis['trend_strength']:.2f}%"
                 )
-            elif can_trade and has_contradictions:
+            elif can_trade and advanced_signal:
                 message = (
-                    f"⚠️ <b>إشارة تداول مع تحذيرات - يرجى المراجعة</b>\n"
+                    f"🚀 <b>إشارة تداول من التحليل المتقدم</b>\n"
                     f"العملة: {symbol}\n"
                     f"الاتجاه: {direction}\n"
+                    f"مرحلة السوق: {market_phase}\n"
+                    f"ثقة المرحلة: {phase_confidence*100}%\n"
                     f"قوة الإشارة: {analysis['signal_strength']:.1f}%\n"
-                    f"<b>تحذيرات التناقض:</b> {contradiction_score}\n"
                     f"السعر الحالي: ${analysis['price']:.4f}\n"
                     f"الرصيد المتاح: ${self.symbol_balances.get(symbol, 0):.2f}\n"
                     f"الوقت: {datetime.now(DAMASCUS_TZ).strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-                    f"<b>تفاصيل المؤشرات:</b>\n"
-                    f"• SMA10: {analysis['sma10']:.4f}\n"
-                    f"• SMA20: {analysis['sma20']:.4f}\n"
-                    f"• SMA50: {analysis['sma50']:.4f}\n"
-                    f"• RSI: {analysis['rsi']:.2f}\n"
-                    f"• Momentum: {analysis['momentum']:.4f} {'⚠️' if analysis['momentum'] < 0.001 else ''}\n"
-                    f"• Volume Ratio: {analysis['volume_ratio']:.2f} {'⚠️' if analysis['volume_ratio'] < 1.0 else ''}\n"
-                    f"• MACD: {analysis['macd']:.4f}\n\n"
-                    f"<b>ملاحظة:</b> هذه الإشارة تحتوي على تناقضات وقد تكون محفوفة بالمخاطر"
+                    f"<b>ملاحظة:</b> هذه إشارة من التحليل المتقدم لمراحل السوق\n"
+                    f"بناءً على نظريات وايكوف، إليوت، VSA، وإيشيموكو"
+                )
+            elif can_trade:
+                message = (
+                    f"🔔 <b>إشارة تداول قوية</b>\n"
+                    f"العملة: {symbol}\n"
+                    f"الاتجاه: {direction}\n"
+                    f"قوة الإشارة: {analysis['signal_strength']:.1f}%\n"
+                    f"السعر الحالي: ${analysis['price']:.4f}\n"
+                    f"الرصيد المتاح: ${self.symbol_balances.get(symbol, 0):.2f}\n"
+                    f"الوقت: {datetime.now(DAMASCUS_TZ).strftime('%Y-%m-%d %H:%M:%S')}"
                 )
             else:
                 message = (
@@ -588,7 +658,8 @@ class FuturesTradingBot:
                 'trade_type': 'futures',
                 'stop_loss': stop_loss_price,
                 'take_profit': take_profit_price,
-                'order_id': order['orderId']
+                'order_id': order['orderId'],
+                'market_phase': analysis.get('market_phase', 'غير محدد')
             }
             
             self.trade_manager.add_trade(symbol, trade_data)
@@ -602,6 +673,7 @@ class FuturesTradingBot:
                     f"✅ <b>تم فتح الصفقة بنجاح</b>\n"
                     f"العملة: {symbol}\n"
                     f"الاتجاه: {direction}\n"
+                    f"مرحلة السوق: {analysis.get('market_phase', 'غير محدد')}\n"
                     f"الكمية: {quantity:.6f}\n"
                     f"سعر الدخول: ${avg_price:.4f}\n"
                     f"وقف الخسارة: ${stop_loss_price:.4f}\n"
@@ -690,6 +762,7 @@ class FuturesTradingBot:
                     f"العملة: {symbol}\n"
                     f"الاتجاه: {trade['side']}\n"
                     f"السبب: {reason}\n"
+                    f"مرحلة السوق عند الدخول: {trade.get('market_phase', 'غير محدد')}\n"
                     f"سعر الدخول: ${trade['entry_price']:.4f}\n"
                     f"سعر الخروج: ${current_price:.4f}\n"
                     f"الوقت: {datetime.now(DAMASCUS_TZ).strftime('%Y-%m-%d %H:%M:%S')}"
@@ -726,8 +799,8 @@ class FuturesTradingBot:
                     if self.trade_manager.is_symbol_trading(symbol):
                         continue
                     
-                    # تحليل الرمز
-                    has_signal, analysis, direction = self.analyze_symbol(symbol)
+                    # استخدام التحليل المتقدم الذي يجمع التقني مع مراحل السوق
+                    has_signal, analysis, direction = self.advanced_analyze_symbol(symbol)
                     
                     if has_signal and direction:
                         # تطبيق فلاتر الجودة
@@ -770,16 +843,17 @@ class FuturesTradingBot:
         if self.notifier:
             active_trades = self.trade_manager.get_active_trades_count()
             heartbeat_msg = (
-                "💓 <b>نبضة البوت</b>\n"
+                "💓 <b>نبضة البوت - النسخة المتقدمة</b>\n"
                 f"الوقت: {datetime.now(DAMASCUS_TZ).strftime('%H:%M:%S')}\n"
                 f"الصفقات النشطة: {active_trades}\n"
-                f"الحالة: 🟢 نشط"
+                f"الحالة: 🟢 نشط\n"
+                f"الميزة: تحليل مراحل السوق المتقدم"
             )
             self.notifier.send_message(heartbeat_msg, 'heartbeat')
 
     def run(self):
         """تشغيل البوت الرئيسي"""
-        logger.info("🚀 بدء تشغيل بوت العقود الآجلة...")
+        logger.info("🚀 بدء تشغيل بوت العقود الآجلة المتقدم...")
         
         try:
             while True:
