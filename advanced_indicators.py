@@ -254,21 +254,38 @@ class AdvancedMarketAnalyzer:
         return df
     
     def _calculate_macd(self, df: pd.DataFrame) -> pd.DataFrame:
-        """حساب مؤشر MACD"""
+        """حساب مؤشر MACD مع معالجة أخطاء محسنة"""
         try:
+            # التحقق من وجود بيانات كافية
+            if len(df) < 26:
+                logger.warning("⚠️ بيانات غير كافية لحساب MACD")
+                df['macd'] = 0
+                df['macd_signal'] = 0
+                df['macd_hist'] = 0
+                return df
+            
             ema12 = df['close'].ewm(span=12, adjust=False, min_periods=6).mean()
             ema26 = df['close'].ewm(span=26, adjust=False, min_periods=13).mean()
-            
+        
             df['macd'] = ema12 - ema26
             df['macd_signal'] = df['macd'].ewm(span=9, adjust=False, min_periods=4).mean()
             df['macd_hist'] = df['macd'] - df['macd_signal']
+        
+            # ✅ التأكد من إنشاء الأعمدة حتى في حالة الخطأ
+            if 'macd' not in df.columns:
+                df['macd'] = 0
+            if 'macd_signal' not in df.columns:
+                df['macd_signal'] = 0
+            if 'macd_hist' not in df.columns:
+                df['macd_hist'] = 0
             
         except Exception as e:
-            logger.warning(f"⚠️ خطأ في حساب MACD: {str(e)}")
+            logger.error(f"❌ خطأ في حساب MACD: {e}")
+            # ✅ القيم الافتراضية في حالة الخطأ
             df['macd'] = 0
             df['macd_signal'] = 0
             df['macd_hist'] = 0
-        
+    
         return df
     
     def _calculate_bollinger_bands(self, df: pd.DataFrame) -> pd.DataFrame:
