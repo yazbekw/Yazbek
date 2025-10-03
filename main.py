@@ -3,6 +3,8 @@ import time
 import schedule
 from datetime import datetime
 import numpy as np
+import pandas as pd
+import random
 
 from config import *
 from utils import setup_logging
@@ -139,12 +141,18 @@ class FuturesTradingBot:
         logger.info("✅ بدء خدمة المراقبة المستمرة")
 
     def _schedule_tasks(self):
-        """جدولة المهام الدورية"""
+        """جدولة المهام الدورية مع التقارير الجديدة"""
         if self.notifier:
+            # التقارير الأساسية
             schedule.every(3).hours.do(self.send_performance_report)
             schedule.every(30).minutes.do(self.send_heartbeat)
             schedule.every(1).hours.do(self.check_trade_timeout)
-            logger.info("✅ تم جدولة المهام الدورية")
+            
+            # التقارير المتقدمة الجديدة
+            schedule.every(6).hours.do(self.send_advanced_performance_report)
+            schedule.every(2).hours.do(self.send_phase_analysis_summary)
+            
+            logger.info("✅ تم جدولة المهام الدورية المتقدمة")
 
     def _send_startup_message(self):
         """إرسال رسالة بدء التشغيل"""
@@ -154,13 +162,18 @@ class FuturesTradingBot:
                 f"📊 <b>الميزات الجديدة:</b>\n"
                 f"• نظام تحليل مراحل السوق المتقدم\n"
                 f"• دمج نظريات وايكوف، إليوت، VSA، إيشيموكو\n"
-                f"• نسب مساهمة محسنة في قرارات التداول\n"
-                f"• إدارة مخاطر محسنة بناءً على مراحل السوق\n\n"
+                f"• نظام إشعارات متكامل للاستراتيجيات\n"
+                f"• تقارير أداء مفصلة لكل استراتيجية\n\n"
                 f"🎯 <b>نسب المساهمة في القرار:</b>\n"
                 f"• الصعود القوي: 30%\n"
                 f"• الهبوط القوي: 25%\n"
                 f"• التجميع: 10%\n"
                 f"• التوزيع: 10%\n\n"
+                f"🔔 <b>أنواع الإشعارات الجديدة:</b>\n"
+                f"• اتفاق استراتيجيات 🎯\n"
+                f"• تعارض استراتيجيات ⚠️\n"
+                f"• إشارات متقدمة 🚀\n"
+                f"• تحليل المراحل 📊\n\n"
                 f"🕒 <b>وقت البدء:</b>\n"
                 f"{datetime.now(DAMASCUS_TZ).strftime('%Y-%m-%d %H:%M:%S')}"
             )
@@ -232,9 +245,12 @@ class FuturesTradingBot:
                     daily_data['volume'].tolist()
                 )
                 
+                # تسجيل تحليل المرحلة
+                self.performance_reporter.record_phase_analysis()
+                
                 # دمج القرارات بناءً على نسب المساهمة المطلوبة
-                final_decision = self._combine_decisions_with_weights(
-                    has_technical_signal, technical_direction, technical_analysis, advanced_analysis
+                final_decision = self._combine_strategies_with_notifications(
+                    symbol, has_technical_signal, technical_direction, technical_analysis, advanced_analysis
                 )
                 return final_decision
             
@@ -246,97 +262,114 @@ class FuturesTradingBot:
             # العودة للتحليل التقليدي في حالة الخطأ
             return self.analyze_symbol(symbol)
 
-    def _combine_decisions_with_weights(self, has_technical_signal, direction, technical_analysis, advanced_analysis):
-        """دمج قرارات التحليل التقني والمتadvanced بنسب المساهمة المطلوبة"""
+    def _combine_strategies_with_notifications(self, symbol, has_traditional_signal, traditional_direction, 
+                                             traditional_analysis, advanced_analysis):
+        """دمج الاستراتيجيات مع الإشعارات المتكاملة"""
         
-        phase = advanced_analysis['phase']
-        confidence = advanced_analysis['confidence']
+        has_advanced_signal, advanced_direction = True, advanced_analysis.get('phase')
+        market_phase = advanced_analysis.get('market_phase', 'غير محدد')
+        phase_confidence = advanced_analysis.get('phase_confidence', 0)
         
-        # نسب المساهمة المطلوبة
-        WEIGHTS = {
-            'markup': 0.30,      # الصعود القوي
-            'markdown': 0.25,    # الهبوط القوي
-            'accumulation': 0.10, # التجميع
-            'distribution': 0.10  # التوزيع
-        }
+        # إرسال تقرير تحليل المرحلة بشكل عشوائي (20% فرصة)
+        if random.random() < 0.2:
+            current_price = self.get_current_price(symbol)
+            if current_price:
+                self.notifier.send_phase_analysis_report(symbol, advanced_analysis, current_price)
         
-        # إذا كان هناك إشارة تقنية
-        if has_technical_signal:
-            base_signal_strength = technical_analysis.get('signal_strength', 50)
+        # 1. ✅ اتفاق تام بين الاستراتيجيتين (أقوى إشارة)
+        if (has_traditional_signal and has_advanced_signal and 
+            traditional_direction == advanced_direction):
             
-            # تطبيق نسب المساهمة بناءً على مرحلة السوق
-            if phase == 'markup' and direction == 'LONG':
-                # تأكيد قوي للشراء - زيادة القوة
-                multiplier = 1.0 + WEIGHTS['markup']
-                technical_analysis['signal_strength'] = base_signal_strength * multiplier
-                technical_analysis['phase_confirmation'] = True
-                technical_analysis['market_phase'] = phase
-                technical_analysis['phase_confidence'] = confidence
-                logger.info(f"✅ تأكيد قوي لشراء {symbol} - مرحلة صعود قوي")
+            # إشعار الاتفاق
+            self.notifier.send_strategy_agreement_notification(
+                symbol, traditional_direction,
+                traditional_analysis.get('signal_strength', 50),
+                advanced_analysis.get('signal_strength', 50),
+                market_phase
+            )
+            
+            # تعزيز قوة الإشارة
+            combined_strength = (traditional_analysis.get('signal_strength', 50) + 
+                                advanced_analysis.get('signal_strength', 50)) / 2 * 1.2
+            
+            enhanced_analysis = {
+                **traditional_analysis,
+                'signal_strength': min(combined_strength, 100),
+                'strategy_type': 'agreement',
+                'strategy_agreement': True,
+                'traditional_strength': traditional_analysis.get('signal_strength', 50),
+                'advanced_strength': advanced_analysis.get('signal_strength', 50),
+                'market_phase': market_phase,
+                'phase_confidence': phase_confidence
+            }
+            
+            logger.info(f"🎯 اتفاق تام على {symbol}: {traditional_direction} - القوة: {combined_strength:.1f}%")
+            self.performance_reporter.record_trade_strategy('agreement', symbol)
+            return True, enhanced_analysis, traditional_direction
+        
+        # 2. ⚠️ إشارة تقليدية فقط
+        elif has_traditional_signal and not has_advanced_signal:
+            logger.info(f"⚠️ إشارة تقليدية فقط لـ {symbol}: {traditional_direction}")
+            
+            # تخفيف قوة الإشارة
+            base_strength = traditional_analysis.get('signal_strength', 50)
+            adjusted_strength = base_strength * 0.9  # تخفيف 10%
+            
+            traditional_analysis['signal_strength'] = adjusted_strength
+            traditional_analysis['strategy_type'] = 'traditional'
+            traditional_analysis['strategy_agreement'] = False
+            traditional_analysis['market_phase'] = market_phase
+            traditional_analysis['phase_confidence'] = phase_confidence
+            
+            self.performance_reporter.record_trade_strategy('traditional', symbol)
+            return True, traditional_analysis, traditional_direction
+        
+        # 3. 🚀 إشارة متقدمة فقط
+        elif not has_traditional_signal and has_advanced_signal:
+            logger.info(f"🚀 إشارة متقدمة فقط لـ {symbol}: {advanced_direction}")
+            
+            # الإشارات المتقدمة تحتاج ثقة أعلى
+            if phase_confidence > 0.7:  # ثقة عالية في مرحلة السوق
+                self.notifier.send_advanced_signal_notification(
+                    symbol, advanced_direction, phase_confidence, 
+                    market_phase, advanced_analysis.get('signal_strength', 50)
+                )
                 
-            elif phase == 'markdown' and direction == 'SHORT':
-                # تأكيد قوي للبيع - زيادة القوة
-                multiplier = 1.0 + WEIGHTS['markdown']
-                technical_analysis['signal_strength'] = base_signal_strength * multiplier
-                technical_analysis['phase_confirmation'] = True
-                technical_analysis['market_phase'] = phase
-                technical_analysis['phase_confidence'] = confidence
-                logger.info(f"✅ تأكيد قوي لبيع {symbol} - مرحلة هبوط قوي")
+                advanced_analysis['strategy_type'] = 'advanced'
+                advanced_analysis['strategy_agreement'] = False
+                advanced_analysis['signal_strength'] = phase_confidence * 80
                 
-            elif phase == 'accumulation' and direction == 'LONG':
-                # تأكيد متوسط للشراء
-                multiplier = 1.0 + WEIGHTS['accumulation']
-                technical_analysis['signal_strength'] = base_signal_strength * multiplier
-                technical_analysis['phase_confirmation'] = True
-                technical_analysis['market_phase'] = phase
-                technical_analysis['phase_confidence'] = confidence
-                logger.info(f"⚠️ تأكيد متوسط لشراء {symbol} - مرحلة تجميع")
-                
-            elif phase == 'distribution' and direction == 'SHORT':
-                # تأكيد متوسط للبيع
-                multiplier = 1.0 + WEIGHTS['distribution']
-                technical_analysis['signal_strength'] = base_signal_strength * multiplier
-                technical_analysis['phase_confirmation'] = True
-                technical_analysis['market_phase'] = phase
-                technical_analysis['phase_confidence'] = confidence
-                logger.info(f"⚠️ تأكيد متوسط لبيع {symbol} - مرحلة توزيع")
-                
+                self.performance_reporter.record_trade_strategy('advanced', symbol)
+                return True, advanced_analysis, advanced_direction
             else:
-                # تعارض بين التحليل التقني ومرحلة السوق - تخفيف الإشارة
-                technical_analysis['signal_strength'] = base_signal_strength * 0.6
-                technical_analysis['phase_confirmation'] = False
-                technical_analysis['market_phase'] = phase
-                technical_analysis['phase_confidence'] = confidence
-                technical_analysis['warning'] = f'تعارض مع مرحلة السوق: {phase}'
-                logger.warning(f"⚠️ تعارض إشارة {direction} لـ {symbol} مع مرحلة {phase}")
+                logger.info(f"⏸️ تخطي إشارة متقدمة ضعيفة لـ {symbol} - الثقة: {phase_confidence}")
+                return False, advanced_analysis, advanced_direction
+        
+        # 4. ❌ تعارض بين الاستراتيجيتين
+        elif (has_traditional_signal and has_advanced_signal and 
+              traditional_direction != advanced_direction):
             
-            return True, technical_analysis, direction
+            logger.warning(f"❌ تعارض بين الاستراتيجيتين لـ {symbol}")
+            
+            # إشعار التعارض
+            self.notifier.send_strategy_conflict_notification(
+                symbol, traditional_direction, advanced_direction, market_phase
+            )
+            
+            self.performance_reporter.record_conflict_avoided(symbol)
+            return False, traditional_analysis, None
         
-        # إذا لم تكن هناك إشارة تقنية ولكن هناك إشارة قوية من التحليل المتقدم
-        elif confidence > 0.7:
-            if phase == 'markup':
-                # إشارة شراء قوية من التحليل المتقدم
-                logger.info(f"🎯 إشارة شراء من التحليل المتadvanced لـ {symbol} - مرحلة صعود قوي")
-                return True, {
-                    'signal_strength': confidence * 80,
-                    'advanced_signal': True,
-                    'market_phase': phase,
-                    'phase_confidence': confidence,
-                    'indicators': advanced_analysis.get('detailed_analysis', {})
-                }, 'LONG'
-                
-            elif phase == 'markdown':
-                # إشارة بيع قوية من التحليل المتقدم
-                logger.info(f"🎯 إشارة بيع من التحليل المتadvanced لـ {symbol} - مرحلة هبوط قوي")
-                return True, {
-                    'signal_strength': confidence * 80,
-                    'advanced_signal': True,
-                    'market_phase': phase,
-                    'phase_confidence': confidence,
-                    'indicators': advanced_analysis.get('detailed_analysis', {})
-                }, 'SHORT'
-        
-        return has_technical_signal, technical_analysis, direction
+        # 5. 📭 لا توجد إشارات
+        else:
+            return False, {}, None
+
+    def _is_phase_contradiction(self, direction, market_phase):
+        """التحقق من تعارض الاتجاه مع مرحلة السوق"""
+        contradictions = {
+            'LONG': ['distribution', 'markdown'],  # شراء في توزيع أو هبوط
+            'SHORT': ['accumulation', 'markup']    # بيع في تجميع أو صعود
+        }
+        return market_phase in contradictions.get(direction, [])
 
     def should_accept_signal(self, symbol, direction, analysis):
         """فلاتر الجودة المحسنة مع مراعاة مراحل السوق"""
@@ -392,72 +425,73 @@ class FuturesTradingBot:
         return True
 
     def send_enhanced_trade_signal_notification(self, symbol, direction, analysis, can_trade, reasons=None):
-        """إشعار إشارة تداول محسن مع معلومات مراحل السوق"""
+        """إشعار إشارة تداول محسن مع معلومات الاستراتيجية"""
         if not self.notifier:
             return
         
         try:
+            strategy_type = analysis.get('strategy_type', 'غير محدد')
             market_phase = analysis.get('market_phase', 'غير محدد')
             phase_confidence = analysis.get('phase_confidence', 0)
-            phase_confirmation = analysis.get('phase_confirmation', False)
-            advanced_signal = analysis.get('advanced_signal', False)
+            signal_strength = analysis.get('signal_strength', 0)
             
-            if can_trade and phase_confirmation:
-                message = (
-                    f"🎯 <b>إشارة تداول قوية - تأكيد مرحلة السوق</b>\n"
-                    f"العملة: {symbol}\n"
-                    f"الاتجاه: {direction}\n"
-                    f"مرحلة السوق: {market_phase}\n"
-                    f"ثقة المرحلة: {phase_confidence*100}%\n"
-                    f"قوة الإشارة: {analysis['signal_strength']:.1f}%\n"
-                    f"السعر الحالي: ${analysis['price']:.4f}\n"
-                    f"الرصيد المتاح: ${self.symbol_balances.get(symbol, 0):.2f}\n"
-                    f"الوقت: {datetime.now(DAMASCUS_TZ).strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-                    f"<b>تفاصيل المرحلة:</b>\n"
-                    f"• مرحلة {market_phase} تدعم اتجاه {direction}\n"
-                    f"• ثقة عالية في تحليل مراحل السوق\n"
-                    f"• إشارة مدعومة بنظريات وايكوف وإليوت\n\n"
-                    f"<b>تفاصيل المؤشرات:</b>\n"
-                    f"• RSI: {analysis['rsi']:.1f}\n"
-                    f"• نسبة الحجم: {analysis['volume_ratio']:.2f}\n"
-                    f"• الزخم: {analysis['momentum']:.4f}\n"
-                    f"• اتجاه: {analysis['trend_strength']:.2f}%"
-                )
-            elif can_trade and advanced_signal:
-                message = (
-                    f"🚀 <b>إشارة تداول من التحليل المتقدم</b>\n"
-                    f"العملة: {symbol}\n"
-                    f"الاتجاه: {direction}\n"
-                    f"مرحلة السوق: {market_phase}\n"
-                    f"ثقة المرحلة: {phase_confidence*100}%\n"
-                    f"قوة الإشارة: {analysis['signal_strength']:.1f}%\n"
-                    f"السعر الحالي: ${analysis['price']:.4f}\n"
-                    f"الرصيد المتاح: ${self.symbol_balances.get(symbol, 0):.2f}\n"
-                    f"الوقت: {datetime.now(DAMASCUS_TZ).strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-                    f"<b>ملاحظة:</b> هذه إشارة من التحليل المتقدم لمراحل السوق\n"
-                    f"بناءً على نظريات وايكوف، إليوت، VSA، وإيشيموكو"
-                )
-            elif can_trade:
-                message = (
-                    f"🔔 <b>إشارة تداول قوية</b>\n"
-                    f"العملة: {symbol}\n"
-                    f"الاتجاه: {direction}\n"
-                    f"قوة الإشارة: {analysis['signal_strength']:.1f}%\n"
-                    f"السعر الحالي: ${analysis['price']:.4f}\n"
-                    f"الرصيد المتاح: ${self.symbol_balances.get(symbol, 0):.2f}\n"
-                    f"الوقت: {datetime.now(DAMASCUS_TZ).strftime('%Y-%m-%d %H:%M:%S')}"
-                )
+            if can_trade:
+                if strategy_type == 'agreement':
+                    message = (
+                        f"🎯 <b>إشارة تداول قوية - اتفاق استراتيجيات</b>\n"
+                        f"العملة: {symbol}\n"
+                        f"الاتجاه: {direction}\n"
+                        f"📊 قوة الإشارة: {signal_strength:.1f}%\n"
+                        f"📈 مرحلة السوق: {market_phase}\n"
+                        f"🎯 ثقة المرحلة: {phase_confidence*100:.1f}%\n"
+                        f"💪 نوع الإشارة: <b>اتفاق تام بين الاستراتيجيات</b>\n"
+                        f"💰 الرصيد المتاح: ${self.symbol_balances.get(symbol, 0):.2f}\n"
+                        f"⏰ الوقت: {datetime.now(DAMASCUS_TZ).strftime('%Y-%m-%d %H:%M:%S')}"
+                    )
+                elif strategy_type == 'traditional':
+                    message = (
+                        f"🔔 <b>إشارة تداول تقليدية</b>\n"
+                        f"العملة: {symbol}\n"
+                        f"الاتجاه: {direction}\n"
+                        f"📊 قوة الإشارة: {signal_strength:.1f}%\n"
+                        f"📈 مرحلة السوق: {market_phase}\n"
+                        f"💪 نوع الإشارة: <b>إشارة تقليدية فقط</b>\n"
+                        f"💰 الرصيد المتاح: ${self.symbol_balances.get(symbol, 0):.2f}\n"
+                        f"⏰ الوقت: {datetime.now(DAMASCUS_TZ).strftime('%Y-%m-%d %H:%M:%S')}"
+                    )
+                elif strategy_type == 'advanced':
+                    message = (
+                        f"🚀 <b>إشارة تداول متقدمة</b>\n"
+                        f"العملة: {symbol}\n"
+                        f"الاتجاه: {direction}\n"
+                        f"📊 قوة الإشارة: {signal_strength:.1f}%\n"
+                        f"📈 مرحلة السوق: {market_phase}\n"
+                        f"🎯 ثقة المرحلة: {phase_confidence*100:.1f}%\n"
+                        f"💪 نوع الإشارة: <b>إشارة متقدمة فقط</b>\n"
+                        f"💰 الرصيد المتاح: ${self.symbol_balances.get(symbol, 0):.2f}\n"
+                        f"⏰ الوقت: {datetime.now(DAMASCUS_TZ).strftime('%Y-%m-%d %H:%M:%S')}"
+                    )
+                else:
+                    message = (
+                        f"🔔 <b>إشارة تداول</b>\n"
+                        f"العملة: {symbol}\n"
+                        f"الاتجاه: {direction}\n"
+                        f"📊 قوة الإشارة: {signal_strength:.1f}%\n"
+                        f"💰 الرصيد المتاح: ${self.symbol_balances.get(symbol, 0):.2f}\n"
+                        f"⏰ الوقت: {datetime.now(DAMASCUS_TZ).strftime('%Y-%m-%d %H:%M:%S')}"
+                    )
             else:
                 message = (
                     f"⏸️ <b>إشارة تداول - غير قابلة للتنفيذ</b>\n"
                     f"العملة: {symbol}\n"
                     f"الاتجاه: {direction}\n"
-                    f"قوة الإشارة: {analysis['signal_strength']:.1f}%\n"
+                    f"📊 قوة الإشارة: {signal_strength:.1f}%\n"
+                    f"📈 مرحلة السوق: {market_phase}\n"
                     f"<b>أسباب عدم التنفيذ:</b>\n"
                 )
                 for reason in reasons:
                     message += f"• {reason}\n"
-                message += f"الوقت: {datetime.now(DAMASCUS_TZ).strftime('%Y-%m-%d %H:%M:%S')}"
+                message += f"⏰ الوقت: {datetime.now(DAMASCUS_TZ).strftime('%Y-%m-%d %H:%M:%S')}"
         
             self.notifier.send_message(message, 'trade_signal')
         
@@ -659,7 +693,8 @@ class FuturesTradingBot:
                 'stop_loss': stop_loss_price,
                 'take_profit': take_profit_price,
                 'order_id': order['orderId'],
-                'market_phase': analysis.get('market_phase', 'غير محدد')
+                'market_phase': analysis.get('market_phase', 'غير محدد'),
+                'strategy_type': analysis.get('strategy_type', 'غير محدد')
             }
             
             self.trade_manager.add_trade(symbol, trade_data)
@@ -674,6 +709,7 @@ class FuturesTradingBot:
                     f"العملة: {symbol}\n"
                     f"الاتجاه: {direction}\n"
                     f"مرحلة السوق: {analysis.get('market_phase', 'غير محدد')}\n"
+                    f"نوع الاستراتيجية: {analysis.get('strategy_type', 'غير محدد')}\n"
                     f"الكمية: {quantity:.6f}\n"
                     f"سعر الدخول: ${avg_price:.4f}\n"
                     f"وقف الخسارة: ${stop_loss_price:.4f}\n"
@@ -729,160 +765,4 @@ class FuturesTradingBot:
 
             side = 'SELL' if trade['side'] == 'LONG' else 'BUY'
             
-            order = self.client.futures_create_order(
-                symbol=symbol,
-                side=side,
-                type='MARKET',
-                quantity=trade['quantity'],
-                reduceOnly=True
-            )
-            
-            # انتظار التنفيذ
-            executed_qty = 0
-            for i in range(10):
-                time.sleep(0.5)
-                order_status = self.client.futures_get_order(symbol=symbol, orderId=order['orderId'])
-                executed_qty = float(order_status.get('executedQty', 0))
-                if executed_qty > 0:
-                    break
-            
-            if executed_qty == 0:
-                raise Exception("أمر الإغلاق لم ينفذ")
-            
-            # إزالة الصفقة
-            self.trade_manager.remove_trade(symbol)
-            
-            # استعادة الرصيد
-            trade_value_leverage = (trade['quantity'] * trade['entry_price']) / trade['leverage']
-            self.symbol_balances[symbol] += trade_value_leverage
-            
-            if self.notifier:
-                message = (
-                    f"🔒 <b>تم إغلاق الصفقة</b>\n"
-                    f"العملة: {symbol}\n"
-                    f"الاتجاه: {trade['side']}\n"
-                    f"السبب: {reason}\n"
-                    f"مرحلة السوق عند الدخول: {trade.get('market_phase', 'غير محدد')}\n"
-                    f"سعر الدخول: ${trade['entry_price']:.4f}\n"
-                    f"سعر الخروج: ${current_price:.4f}\n"
-                    f"الوقت: {datetime.now(DAMASCUS_TZ).strftime('%Y-%m-%d %H:%M:%S')}"
-                )
-                self.notifier.send_message(message, 'trade_close')
-            
-            logger.info(f"✅ تم إغلاق صفقة {symbol}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"❌ فشل إغلاق صفقة {symbol}: {e}")
-            return False
-
-    def get_active_trades_details(self):
-        """الحصول على تفاصيل الصفقات النشطة"""
-        return self.trade_manager.get_all_trades()
-
-    def scan_and_trade(self):
-        """المسح الضوئي وتنفيذ الصفقات"""
-        try:
-            logger.info("🔍 بدء المسح الضوئي للفرص...")
-            
-            # فحص انتهاء وقت الصفقات
-            self.check_trade_timeout()
-            
-            # التحقق من عدد الصفقات النشطة
-            if self.trade_manager.get_active_trades_count() >= TRADING_SETTINGS['max_active_trades']:
-                logger.info("⏸️ إيقاف المسح - الحد الأقصى للصفقات")
-                return
-            
-            for symbol in self.symbols:
-                try:
-                    # تخطي الرموز التي بها صفقات نشطة
-                    if self.trade_manager.is_symbol_trading(symbol):
-                        continue
-                    
-                    # استخدام التحليل المتقدم الذي يجمع التقني مع مراحل السوق
-                    has_signal, analysis, direction = self.advanced_analyze_symbol(symbol)
-                    
-                    if has_signal and direction:
-                        # تطبيق فلاتر الجودة
-                        if not self.should_accept_signal(symbol, direction, analysis):
-                            continue
-                        
-                        can_trade, reasons = self.can_open_trade(symbol)
-                        
-                        self.send_enhanced_trade_signal_notification(symbol, direction, analysis, can_trade, reasons)
-                        
-                        if can_trade:
-                            available_balance = self.symbol_balances.get(symbol, 0)
-                            quantity, stop_loss, take_profit = self.calculate_position_size(
-                                symbol, direction, analysis, available_balance
-                            )
-                            
-                            if quantity and quantity > 0:
-                                success = self.execute_trade(symbol, direction, quantity, stop_loss, take_profit, analysis)
-                                
-                                if success:
-                                    logger.info(f"✅ تم تنفيذ صفقة {direction} لـ {symbol}")
-                    
-                    time.sleep(1)
-                    
-                except Exception as e:
-                    logger.error(f"❌ خطأ في معالجة {symbol}: {e}")
-                    continue
-            
-            logger.info("✅ اكتمل المسح الضوئي")
-            
-        except Exception as e:
-            logger.error(f"❌ خطأ في المسح الضوئي: {e}")
-
-    def send_performance_report(self):
-        """إرسال تقرير الأداء"""
-        self.performance_reporter.generate_performance_report()
-
-    def send_heartbeat(self):
-        """إرسال نبضة"""
-        if self.notifier:
-            active_trades = self.trade_manager.get_active_trades_count()
-            heartbeat_msg = (
-                "💓 <b>نبضة البوت - النسخة المتقدمة</b>\n"
-                f"الوقت: {datetime.now(DAMASCUS_TZ).strftime('%H:%M:%S')}\n"
-                f"الصفقات النشطة: {active_trades}\n"
-                f"الحالة: 🟢 نشط\n"
-                f"الميزة: تحليل مراحل السوق المتقدم"
-            )
-            self.notifier.send_message(heartbeat_msg, 'heartbeat')
-
-    def run(self):
-        """تشغيل البوت الرئيسي"""
-        logger.info("🚀 بدء تشغيل بوت العقود الآجلة المتقدم...")
-        
-        try:
-            while True:
-                try:
-                    schedule.run_pending()
-                    self.scan_and_trade()
-                    
-                    sleep_minutes = TRADING_SETTINGS['rescan_interval_minutes']
-                    logger.info(f"⏳ انتظار {sleep_minutes} دقيقة للمسح التالي...")
-                    time.sleep(sleep_minutes * 60)
-                    
-                except KeyboardInterrupt:
-                    logger.info("⏹️ إيقاف البوت يدوياً...")
-                    break
-                except Exception as e:
-                    logger.error(f"❌ خطأ في الحلقة الرئيسية: {e}")
-                    time.sleep(60)
-                    
-        except Exception as e:
-            logger.error(f"❌ خطأ غير متوقع: {e}")
-        finally:
-            logger.info("🛑 إيقاف البوت...")
-
-def main():
-    try:
-        bot = FuturesTradingBot()
-        bot.run()
-    except Exception as e:
-        logger.error(f"❌ فشل تشغيل البوت: {e}")
-
-if __name__ == "__main__":
-    main()
+            order =
