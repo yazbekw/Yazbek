@@ -29,7 +29,7 @@ TRADING_SETTINGS = {
     'rescan_interval_minutes': 10,
     'price_update_interval': 3,
     'trade_timeout_hours': 8.0,
-    'min_signal_score': 4.5,
+    'min_signal_score': 4.2,
     'atr_stop_loss_multiplier': 1.5,
     'atr_take_profit_multiplier': 3.0,
     'min_trade_duration_minutes': 45,
