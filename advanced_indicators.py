@@ -93,99 +93,114 @@ class AdvancedMarketAnalyzer:
             return self._default_analysis()
     
     def _wyckoff_analysis(self, df) -> Dict[str, Any]:
-        """تحليل مراحل وايكوف مع نسب مساهمة"""
-        latest = df.iloc[-1]
-        wyckoff_signals = {}
-        
-        # مؤشرات التجميع (Accumulation)
-        accumulation_signals = {
-            'low_volatility': latest['volatility'] < 0.05,                    # 15%
-            'volume_decrease': latest['volume_ratio'] < 1.2,                  # 15%
-            'rsi_neutral': 30 <= latest['rsi'] <= 60,                         # 20%
-            'price_consolidation': abs(latest['close'] - latest['sma20']) / latest['sma20'] < 0.05,  # 20%
-            'macd_improving': latest['macd_hist'] > latest['macd_hist'].shift(1),  # 15%
-            'support_testing': latest['close'] > latest['bb_lower'] * 1.02,   # 15%
-        }
-        
-        # مؤشرات الصعود القوي (Markup)
-        markup_signals = {
-            'trend_up': latest['sma20'] > latest['sma50'],                    # 20%
-            'volume_increase': latest['volume_ratio'] > 1.0,                  # 20%
-            'rsi_strong': latest['rsi'] > 50,                                 # 15%
-            'price_rising': latest['close'] > latest['close'].shift(5),       # 15%
-            'macd_bullish': latest['macd'] > latest['macd_signal'],           # 15%
-            'bb_breakout': latest['close'] > latest['bb_middle'],             # 15%
-        }
-        
-        # مؤشرات التوزيع (Distribution)
-        distribution_signals = {
-            'high_volatility': latest['volatility'] > 0.08,                   # 20%
-            'volume_spike': latest['volume_ratio'] > 1.5,                     # 20%
-            'rsi_overbought': latest['rsi'] > 70,                             # 20%
-            'price_deviation': abs(latest['close'] - latest['sma20']) / latest['sma20'] > 0.1,  # 15%
-            'macd_divergence': latest['macd_hist'] < 0,                       # 15%
-            'resistance_testing': latest['close'] < latest['bb_upper'] * 0.98, # 10%
-        }
-        
-        # مؤشرات الهبوط القوي (Markdown)
-        markdown_signals = {
-            'trend_down': latest['sma20'] < latest['sma50'],                  # 25%
-            'volume_panic': latest['volume_ratio'] > 1.2,                     # 20%
-            'rsi_oversold': latest['rsi'] < 30,                               # 20%
-            'price_falling': latest['close'] < latest['close'].shift(5),      # 15%
-            'macd_bearish': latest['macd'] < latest['macd_signal'],           # 10%
-            'bb_breakdown': latest['close'] < latest['bb_middle'],            # 10%
-        }
-        
-        # حساب النقاط المرجحة
-        accumulation_score = sum([
-            0.15 if accumulation_signals['low_volatility'] else 0,
-            0.15 if accumulation_signals['volume_decrease'] else 0,
-            0.20 if accumulation_signals['rsi_neutral'] else 0,
-            0.20 if accumulation_signals['price_consolidation'] else 0,
-            0.15 if accumulation_signals['macd_improving'] else 0,
-            0.15 if accumulation_signals['support_testing'] else 0,
-        ])
-        
-        markup_score = sum([
-            0.20 if markup_signals['trend_up'] else 0,
-            0.20 if markup_signals['volume_increase'] else 0,
-            0.15 if markup_signals['rsi_strong'] else 0,
-            0.15 if markup_signals['price_rising'] else 0,
-            0.15 if markup_signals['macd_bullish'] else 0,
-            0.15 if markup_signals['bb_breakout'] else 0,
-        ])
-        
-        distribution_score = sum([
-            0.20 if distribution_signals['high_volatility'] else 0,
-            0.20 if distribution_signals['volume_spike'] else 0,
-            0.20 if distribution_signals['rsi_overbought'] else 0,
-            0.15 if distribution_signals['price_deviation'] else 0,
-            0.15 if distribution_signals['macd_divergence'] else 0,
-            0.10 if distribution_signals['resistance_testing'] else 0,
-        ])
-        
-        markdown_score = sum([
-            0.25 if markdown_signals['trend_down'] else 0,
-            0.20 if markdown_signals['volume_panic'] else 0,
-            0.20 if markdown_signals['rsi_oversold'] else 0,
-            0.15 if markdown_signals['price_falling'] else 0,
-            0.10 if markdown_signals['macd_bearish'] else 0,
-            0.10 if markdown_signals['bb_breakdown'] else 0,
-        ])
-        
-        return {
-            'accumulation': accumulation_score,
-            'markup': markup_score,
-            'distribution': distribution_score,
-            'markdown': markdown_score,
-            'signals': {
-                'accumulation': accumulation_signals,
-                'markup': markup_signals,
-                'distribution': distribution_signals,
-                'markdown': markdown_signals
+        """تحليل مراحل وايكوف مع نسب مساهمة - الإصدار المصحح"""
+        try:
+            latest = df.iloc[-1]
+            
+            # ✅ الإصلاح: استخدام df بدلاً من latest للعمليات التاريخية
+            prev_macd_hist = df['macd_hist'].iloc[-2] if len(df) > 1 else 0
+            
+            wyckoff_signals = {}
+            
+            # مؤشرات التجميع (Accumulation)
+            accumulation_signals = {
+                'low_volatility': latest['volatility'] < 0.05,
+                'volume_decrease': latest['volume_ratio'] < 1.2,
+                'rsi_neutral': 30 <= latest['rsi'] <= 60,
+                'price_consolidation': abs(latest['close'] - latest['sma20']) / latest['sma20'] < 0.05,
+                'macd_improving': latest['macd_hist'] > prev_macd_hist,  # ✅ الإصلاح هنا
+                'support_testing': latest['close'] > latest['bb_lower'] * 1.02,
             }
-        }
+            
+            # مؤشرات الصعود القوي (Markup)
+            markup_signals = {
+                'trend_up': latest['sma20'] > latest['sma50'],
+                'volume_increase': latest['volume_ratio'] > 1.0,
+                'rsi_strong': latest['rsi'] > 50,
+                'price_rising': latest['close'] > df['close'].iloc[-5] if len(df) > 5 else False,  # ✅ الإصلاح
+                'macd_bullish': latest['macd'] > latest['macd_signal'],
+                'bb_breakout': latest['close'] > latest['bb_middle'],
+            }
+            
+            # مؤشرات التوزيع (Distribution)
+            distribution_signals = {
+                'high_volatility': latest['volatility'] > 0.08,
+                'volume_spike': latest['volume_ratio'] > 1.5,
+                'rsi_overbought': latest['rsi'] > 70,
+                'price_deviation': abs(latest['close'] - latest['sma20']) / latest['sma20'] > 0.1,
+                'macd_divergence': latest['macd_hist'] < 0,
+                'resistance_testing': latest['close'] < latest['bb_upper'] * 0.98,
+            }
+            
+            # مؤشرات الهبوط القوي (Markdown)
+            markdown_signals = {
+                'trend_down': latest['sma20'] < latest['sma50'],
+                'volume_panic': latest['volume_ratio'] > 1.2,
+                'rsi_oversold': latest['rsi'] < 30,
+                'price_falling': latest['close'] < df['close'].iloc[-5] if len(df) > 5 else False,  # ✅ الإصلاح
+                'macd_bearish': latest['macd'] < latest['macd_signal'],
+                'bb_breakdown': latest['close'] < latest['bb_middle'],
+            }
+            
+            # حساب النقاط المرجحة
+            accumulation_score = sum([
+                0.15 if accumulation_signals['low_volatility'] else 0,
+                0.15 if accumulation_signals['volume_decrease'] else 0,
+                0.20 if accumulation_signals['rsi_neutral'] else 0,
+                0.20 if accumulation_signals['price_consolidation'] else 0,
+                0.15 if accumulation_signals['macd_improving'] else 0,
+                0.15 if accumulation_signals['support_testing'] else 0,
+            ])
+            
+            markup_score = sum([
+                0.20 if markup_signals['trend_up'] else 0,
+                0.20 if markup_signals['volume_increase'] else 0,
+                0.15 if markup_signals['rsi_strong'] else 0,
+                0.15 if markup_signals['price_rising'] else 0,
+                0.15 if markup_signals['macd_bullish'] else 0,
+                0.15 if markup_signals['bb_breakout'] else 0,
+            ])
+            
+            distribution_score = sum([
+                0.20 if distribution_signals['high_volatility'] else 0,
+                0.20 if distribution_signals['volume_spike'] else 0,
+                0.20 if distribution_signals['rsi_overbought'] else 0,
+                0.15 if distribution_signals['price_deviation'] else 0,
+                0.15 if distribution_signals['macd_divergence'] else 0,
+                0.10 if distribution_signals['resistance_testing'] else 0,
+            ])
+            
+            markdown_score = sum([
+                0.25 if markdown_signals['trend_down'] else 0,
+                0.20 if markdown_signals['volume_panic'] else 0,
+                0.20 if markdown_signals['rsi_oversold'] else 0,
+                0.15 if markdown_signals['price_falling'] else 0,
+                0.10 if markdown_signals['macd_bearish'] else 0,
+                0.10 if markdown_signals['bb_breakdown'] else 0,
+            ])
+            
+            return {
+                'accumulation': accumulation_score,
+                'markup': markup_score,
+                'distribution': distribution_score,
+                'markdown': markdown_score,
+                'signals': {
+                    'accumulation': accumulation_signals,
+                    'markup': markup_signals,
+                    'distribution': distribution_signals,
+                    'markdown': markdown_signals
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في تحليل وايكوف: {e}")
+            return {
+                'accumulation': 0,
+                'markup': 0,
+                'distribution': 0,
+                'markdown': 0,
+                'signals': {}
+            }
     
     def _elliott_wave_analysis(self, prices: List[float]) -> Dict[str, Any]:
         """تحليل موجات إليوت"""
@@ -216,98 +231,118 @@ class AdvancedMarketAnalyzer:
     
     def _volume_spread_analysis(self, df) -> Dict[str, Any]:
         """تحليل الحجم والانتشار (VSA)"""
-        latest = df.iloc[-1]
-        
-        # مؤشرات VSA
-        vsa_signals = {
-            'accumulation_volume': latest['volume_ratio'] < 1.2 and latest['spread'] < latest['spread'].mean(),
-            'markup_volume': latest['volume_ratio'] > 1.0 and latest['close'] > latest['open'],
-            'distribution_volume': latest['volume_ratio'] > 1.5 and latest['spread'] > latest['spread'].mean(),
-            'markdown_volume': latest['volume_ratio'] > 1.2 and latest['close'] < latest['open'],
-        }
-        
-        scores = {
-            'accumulation': 0.7 if vsa_signals['accumulation_volume'] else 0,
-            'markup': 0.8 if vsa_signals['markup_volume'] else 0,
-            'distribution': 0.7 if vsa_signals['distribution_volume'] else 0,
-            'markdown': 0.6 if vsa_signals['markdown_volume'] else 0,
-        }
-        
-        return scores
+        try:
+            latest = df.iloc[-1]
+            
+            # مؤشرات VSA
+            vsa_signals = {
+                'accumulation_volume': latest['volume_ratio'] < 1.2 and latest['spread'] < df['spread'].mean(),
+                'markup_volume': latest['volume_ratio'] > 1.0 and latest['close'] > latest['open'],
+                'distribution_volume': latest['volume_ratio'] > 1.5 and latest['spread'] > df['spread'].mean(),
+                'markdown_volume': latest['volume_ratio'] > 1.2 and latest['close'] < latest['open'],
+            }
+            
+            scores = {
+                'accumulation': 0.7 if vsa_signals['accumulation_volume'] else 0,
+                'markup': 0.8 if vsa_signals['markup_volume'] else 0,
+                'distribution': 0.7 if vsa_signals['distribution_volume'] else 0,
+                'markdown': 0.6 if vsa_signals['markdown_volume'] else 0,
+            }
+            
+            return scores
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في تحليل VSA: {e}")
+            return {'accumulation': 0, 'markup': 0, 'distribution': 0, 'markdown': 0}
     
     def _ichimoku_analysis(self, df) -> Dict[str, Any]:
         """تحليل سحابة إيشيموكو"""
-        latest = df.iloc[-1]
-        
-        ichimoku_signals = {
-            'above_cloud': latest['close'] > latest['senkou_span_a'] and latest['close'] > latest['senkou_span_b'],
-            'below_cloud': latest['close'] < latest['senkou_span_a'] and latest['close'] < latest['senkou_span_b'],
-            'tenkan_above_kijun': latest['tenkan_sen'] > latest['kijun_sen'],
-            'tenkan_below_kijun': latest['tenkan_sen'] < latest['kijun_sen'],
-            'future_cloud_bullish': latest['senkou_span_a'] > latest['senkou_span_b'],
-            'future_cloud_bearish': latest['senkou_span_a'] < latest['senkou_span_b'],
-        }
-        
-        scores = {
-            'accumulation': 0.4 if ichimoku_signals['above_cloud'] and ichimoku_signals['tenkan_above_kijun'] else 0,
-            'markup': 0.8 if ichimoku_signals['above_cloud'] and ichimoku_signals['tenkan_above_kijun'] and ichimoku_signals['future_cloud_bullish'] else 0,
-            'distribution': 0.6 if ichimoku_signals['below_cloud'] and ichimoku_signals['tenkan_below_kijun'] else 0,
-            'markdown': 0.7 if ichimoku_signals['below_cloud'] and ichimoku_signals['tenkan_below_kijun'] and ichimoku_signals['future_cloud_bearish'] else 0,
-        }
-        
-        return scores
+        try:
+            latest = df.iloc[-1]
+            
+            ichimoku_signals = {
+                'above_cloud': latest['close'] > latest['senkou_span_a'] and latest['close'] > latest['senkou_span_b'],
+                'below_cloud': latest['close'] < latest['senkou_span_a'] and latest['close'] < latest['senkou_span_b'],
+                'tenkan_above_kijun': latest['tenkan_sen'] > latest['kijun_sen'],
+                'tenkan_below_kijun': latest['tenkan_sen'] < latest['kijun_sen'],
+                'future_cloud_bullish': latest['senkou_span_a'] > latest['senkou_span_b'],
+                'future_cloud_bearish': latest['senkou_span_a'] < latest['senkou_span_b'],
+            }
+            
+            scores = {
+                'accumulation': 0.4 if ichimoku_signals['above_cloud'] and ichimoku_signals['tenkan_above_kijun'] else 0,
+                'markup': 0.8 if ichimoku_signals['above_cloud'] and ichimoku_signals['tenkan_above_kijun'] and ichimoku_signals['future_cloud_bullish'] else 0,
+                'distribution': 0.6 if ichimoku_signals['below_cloud'] and ichimoku_signals['tenkan_below_kijun'] else 0,
+                'markdown': 0.7 if ichimoku_signals['below_cloud'] and ichimoku_signals['tenkan_below_kijun'] and ichimoku_signals['future_cloud_bearish'] else 0,
+            }
+            
+            return scores
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في تحليل إيشيموكو: {e}")
+            return {'accumulation': 0, 'markup': 0, 'distribution': 0, 'markdown': 0}
     
     def _momentum_analysis(self, df) -> Dict[str, Any]:
         """التحليل التقليدي للزخم"""
-        latest = df.iloc[-1]
-        
-        momentum_signals = {
-            'rsi_accumulation': 30 <= latest['rsi'] <= 50,
-            'rsi_markup': 50 < latest['rsi'] <= 70,
-            'rsi_distribution': latest['rsi'] > 70,
-            'rsi_markdown': latest['rsi'] < 30,
-            'macd_bullish': latest['macd'] > latest['macd_signal'],
-            'macd_bearish': latest['macd'] < latest['macd_signal'],
-        }
-        
-        scores = {
-            'accumulation': 0.6 if momentum_signals['rsi_accumulation'] else 0,
-            'markup': 0.7 if momentum_signals['rsi_markup'] and momentum_signals['macd_bullish'] else 0,
-            'distribution': 0.6 if momentum_signals['rsi_distribution'] else 0,
-            'markdown': 0.7 if momentum_signals['rsi_markdown'] and momentum_signals['macd_bearish'] else 0,
-        }
-        
-        return scores
+        try:
+            latest = df.iloc[-1]
+            
+            momentum_signals = {
+                'rsi_accumulation': 30 <= latest['rsi'] <= 50,
+                'rsi_markup': 50 < latest['rsi'] <= 70,
+                'rsi_distribution': latest['rsi'] > 70,
+                'rsi_markdown': latest['rsi'] < 30,
+                'macd_bullish': latest['macd'] > latest['macd_signal'],
+                'macd_bearish': latest['macd'] < latest['macd_signal'],
+            }
+            
+            scores = {
+                'accumulation': 0.6 if momentum_signals['rsi_accumulation'] else 0,
+                'markup': 0.7 if momentum_signals['rsi_markup'] and momentum_signals['macd_bullish'] else 0,
+                'distribution': 0.6 if momentum_signals['rsi_distribution'] else 0,
+                'markdown': 0.7 if momentum_signals['rsi_markdown'] and momentum_signals['macd_bearish'] else 0,
+            }
+            
+            return scores
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في تحليل الزخم: {e}")
+            return {'accumulation': 0, 'markup': 0, 'distribution': 0, 'markdown': 0}
     
     def _combine_analyses(self, analyses: Dict[str, Dict]) -> Dict[str, Any]:
         """دمج جميع التحليلات مع الأوزان"""
-        final_scores = {phase: 0 for phase in ['accumulation', 'markup', 'distribution', 'markdown']}
-        
-        for phase in final_scores.keys():
-            for analysis_type, analysis_data in analyses.items():
-                weight = self.indicator_weights.get(analysis_type, 0.1)
-                if phase in analysis_data:
-                    phase_score = analysis_data[phase]
-                    final_scores[phase] += phase_score * weight
-        
-        # تحديد المرحلة الأقوى
-        best_phase = max(final_scores, key=final_scores.get)
-        confidence = final_scores[best_phase]
-        
-        # تحسين الثقة بناءً على اتفاق المؤشرات
-        agreement_count = sum(1 for phase, score in final_scores.items() 
-                            if score > confidence * 0.7)
-        confidence_boost = min(0.2, agreement_count * 0.05)
-        final_confidence = min(1.0, confidence + confidence_boost)
-        
-        return {
-            'phase': best_phase,
-            'confidence': round(final_confidence, 2),
-            'scores': final_scores,
-            'phase_translation': self._translate_phase(best_phase),
-            'trading_decision': self._get_trading_decision(best_phase, final_confidence),
-            'detailed_analysis': analyses
-        }
+        try:
+            final_scores = {phase: 0 for phase in ['accumulation', 'markup', 'distribution', 'markdown']}
+            
+            for phase in final_scores.keys():
+                for analysis_type, analysis_data in analyses.items():
+                    weight = self.indicator_weights.get(analysis_type, 0.1)
+                    if phase in analysis_data:
+                        phase_score = analysis_data[phase]
+                        final_scores[phase] += phase_score * weight
+            
+            # تحديد المرحلة الأقوى
+            best_phase = max(final_scores, key=final_scores.get)
+            confidence = final_scores[best_phase]
+            
+            # تحسين الثقة بناءً على اتفاق المؤشرات
+            agreement_count = sum(1 for phase, score in final_scores.items() 
+                                if score > confidence * 0.7)
+            confidence_boost = min(0.2, agreement_count * 0.05)
+            final_confidence = min(1.0, confidence + confidence_boost)
+            
+            return {
+                'phase': best_phase,
+                'confidence': round(final_confidence, 2),
+                'scores': final_scores,
+                'phase_translation': self._translate_phase(best_phase),
+                'trading_decision': self._get_trading_decision(best_phase, final_confidence),
+                'detailed_analysis': analyses
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في دمج التحليلات: {e}")
+            return self._default_analysis()
     
     def _translate_phase(self, phase: str) -> str:
         """ترجمة المرحلة للعربية"""
