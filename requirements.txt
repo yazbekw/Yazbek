@@ -1,0 +1,8 @@
+python-binance==1.0.19
+pandas==2.0.3
+numpy==1.24.3
+python-dotenv==1.0.0
+requests==2.31.0
+schedule==1.2.0
+flask==2.3.3
+pytz==2023.3
