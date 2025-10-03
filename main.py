@@ -99,19 +99,16 @@ class FuturesTradingBot:
         if FuturesTradingBot._instance is not None:
             raise Exception("هذه الفئة تستخدم نمط Singleton")
 
-        # التحقق من المفاتيح
-        if not all([BINANCE_API_KEY, BINANCE_API_SECRET]):
+        # تحميل المفاتيح من البيئة مباشرة (كما في الأصل)
+        self.api_key = os.environ.get('BINANCE_API_KEY')
+        self.api_secret = os.environ.get('BINANCE_API_SECRET')
+
+        if not all([self.api_key, self.api_secret]):
             raise ValueError("مفاتيح Binance مطلوبة")
 
-        # تهيئة العميل - تم إصلاح المشكلة هنا
+        # تهيئة العميل بنفس الطريقة الأصلية
         try:
-            from binance.client import Client
-            self.client = Client(
-                api_key=BINANCE_API_KEY, 
-                api_secret=BINANCE_API_SECRET,
-                # إضافة إعدادات إضافية للثبات
-                requests_params={'timeout': 10}
-            )
+            self.client = Client(self.api_key, self.api_secret)
             self.test_api_connection()
         except Exception as e:
             logger.error(f"❌ فشل تهيئة العميل: {e}")
