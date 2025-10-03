@@ -1,8 +1,79 @@
-import threading
+import os
+import traceback
+import pandas as pd
+import numpy as np
+import hashlib
+from binance.client import Client
+from binance.enums import *
 import time
+from datetime import datetime, timedelta
+import requests
+import logging
+import warnings
+warnings.filterwarnings('ignore')
+from dotenv import load_dotenv
+import threading
 import schedule
-from datetime import datetime
+from flask import Flask, jsonify
+import pytz
 
+# تشخيص مفصل للخطأ
+def debug_initialization():
+    """دالة تشخيصية مفصلة"""
+    print("🔍 بدء التشخيص التفصيلي...")
+    
+    try:
+        # 1. فحص متغيرات البيئة
+        print("1. فحص متغيرات البيئة...")
+        load_dotenv()
+        api_key = os.environ.get('BINANCE_API_KEY')
+        api_secret = os.environ.get('BINANCE_API_SECRET')
+        
+        print(f"   API_KEY موجود: {bool(api_key)}")
+        print(f"   API_SECRET موجود: {bool(api_secret)}")
+        
+        if not api_key or not api_secret:
+            raise ValueError("مفاتيح API غير مكتملة")
+        
+        # 2. فحص إعدادات التداول
+        print("2. فحص إعدادات التداول...")
+        from config import TRADING_SETTINGS
+        
+        # فحص أن جميع المفاتيح قابلة للتجزئة
+        for key, value in TRADING_SETTINGS.items():
+            print(f"   المفتاح: {key}, النوع: {type(key)}, القيمة: {value}")
+            # محاولة استخدام المفتاح في مجموعة (سيظهر الخطأ هنا إذا كان غير قابل للتجزئة)
+            test_set = set()
+            test_set.add(key)  # إذا فشل هنا، سيعرفنا على المفتاح المشكلة
+        
+        print("✅ جميع المفاتيح قابلة للتجزئة")
+        
+        # 3. فحص تهيئة العميل
+        print("3. فحص تهيئة عميل Binance...")
+        client = Client(api_key, api_secret)
+        server_time = client.futures_time()
+        print("✅ اتصال Binance API ناجح")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ خطأ في التشخيص: {e}")
+        print("🔍 تتبع الخطأ:")
+        traceback.print_exc()
+        return False
+
+# تشغيل التشخيص قبل أي شيء
+print("🚀 بدء تشخيص البوت...")
+debug_success = debug_initialization()
+
+if not debug_success:
+    print("❌ فشل التشخيص، إيقاف البوت...")
+    exit(1)
+
+# ثم استمر في بقية الكود...
+print("✅ التشخيص ناجح، متابعة التشغيل...")
+
+# بقية imports
 from config import *
 from utils import setup_logging
 from notifications import TelegramNotifier
@@ -12,24 +83,10 @@ from price_manager import PriceManager
 from performance_reporter import PerformanceReporter
 from continuous_monitor import ContinuousMonitor
 from web_server import run_flask_app
-import traceback
-
-def debug_config():
-    """دالة لتصحيح إعدادات التداول"""
-    try:
-        # اختبار أن الإعدادات صحيحة
-        settings = TRADING_SETTINGS.copy()
-        print("✅ تم تحميل الإعدادات بنجاح")
-        return True
-    except Exception as e:
-        print(f"❌ خطأ في الإعدادات: {e}")
-        traceback.print_exc()
-        return False
-
-# استدعاء دالة التصحيح قبل بدء التشغيل
-debug_config()
 
 logger = setup_logging()
+
+# ثم بقية الكود كما هو...
 
 class FuturesTradingBot:
     _instance = None
