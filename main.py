@@ -765,4 +765,358 @@ class FuturesTradingBot:
 
             side = 'SELL' if trade['side'] == 'LONG' else 'BUY'
             
-            order =
+            order = self.client.futures_create_order(
+                symbol=symbol,
+                side=side,
+                type='MARKET',
+                quantity=trade['quantity'],
+                reduceOnly=True
+            )
+            
+            # انتظار التنفيذ
+            executed_qty = 0
+            for i in range(10):
+                time.sleep(0.5)
+                order_status = self.client.futures_get_order(symbol=symbol, orderId=order['orderId'])
+                executed_qty = float(order_status.get('executedQty', 0))
+                if executed_qty > 0:
+                    break
+            
+            if executed_qty == 0:
+                raise Exception("أمر الإغلاق لم ينفذ")
+            
+            # حساب الربح/الخسارة
+            entry_price = trade['entry_price']
+            pnl = (current_price - entry_price) * trade['quantity'] if trade['side'] == 'LONG' else (entry_price - current_price) * trade['quantity']
+            
+            # إزالة الصفقة
+            self.trade_manager.remove_trade(symbol)
+            
+            # استعادة الرصيد
+            trade_value_leverage = (trade['quantity'] * trade['entry_price']) / trade['leverage']
+            self.symbol_balances[symbol] += trade_value_leverage
+            
+            # تسجيل إغلاق الصفقة في PerformanceReporter
+            success = pnl > 0
+            self.performance_reporter.record_trade_closed(
+                symbol, pnl, trade.get('strategy_type', 'غير محدد'), success
+            )
+            
+            if self.notifier:
+                message = (
+                    f"🔒 <b>تم إغلاق الصفقة</b>\n"
+                    f"العملة: {symbol}\n"
+                    f"الاتجاه: {trade['side']}\n"
+                    f"السبب: {reason}\n"
+                    f"مرحلة السوق عند الدخول: {trade.get('market_phase', 'غير محدد')}\n"
+                    f"نوع الاستراتيجية: {trade.get('strategy_type', 'غير محدد')}\n"
+                    f"سعر الدخول: ${trade['entry_price']:.4f}\n"
+                    f"سعر الخروج: ${current_price:.4f}\n"
+                    f"الربح/الخسارة: ${pnl:+.2f}\n"
+                    f"الوقت: {datetime.now(DAMASCUS_TZ).strftime('%Y-%m-%d %H:%M:%S')}"
+                )
+                self.notifier.send_message(message, 'trade_close')
+            
+            logger.info(f"✅ تم إغلاق صفقة {symbol} - PnL: ${pnl:+.2f}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ فشل إغلاق صفقة {symbol}: {e}")
+            return False
+
+    def get_active_trades_details(self):
+        """الحصول على تفاصيل الصفقات النشطة"""
+        return self.trade_manager.get_all_trades()
+
+    def scan_and_trade(self):
+        """المسح الضوئي وتنفيذ الصفقات - النسخة المتقدمة"""
+        try:
+            logger.info("🔍 بدء المسح الضوئي المزدوج للفرص...")
+            
+            # فحص انتهاء وقت الصفقات
+            self.check_trade_timeout()
+            
+            # التحقق من عدد الصفقات النشطة
+            if self.trade_manager.get_active_trades_count() >= TRADING_SETTINGS['max_active_trades']:
+                logger.info("⏸️ إيقاف المسح - الحد الأقصى للصفقات")
+                return
+            
+            for symbol in self.symbols:
+                try:
+                    # تخطي الرموز التي بها صفقات نشطة
+                    if self.trade_manager.is_symbol_trading(symbol):
+                        continue
+                    
+                    # استخدام التحليل المتقدم الذي يجمع التقني مع مراحل السوق
+                    has_signal, analysis, direction = self.advanced_analyze_symbol(symbol)
+                    
+                    if has_signal and direction:
+                        # تطبيق فلاتر الجودة
+                        if not self.should_accept_signal(symbol, direction, analysis):
+                            continue
+                        
+                        can_trade, reasons = self.can_open_trade(symbol)
+                        
+                        # إضافة الرصيد المتاح للتحليل لعرضه في الإشعار
+                        analysis['available_balance'] = self.symbol_balances.get(symbol, 0)
+                        
+                        self.send_enhanced_trade_signal_notification(symbol, direction, analysis, can_trade, reasons)
+                        
+                        if can_trade:
+                            available_balance = self.symbol_balances.get(symbol, 0)
+                            quantity, stop_loss, take_profit = self.calculate_position_size(
+                                symbol, direction, analysis, available_balance
+                            )
+                            
+                            if quantity and quantity > 0:
+                                success = self.execute_trade(symbol, direction, quantity, stop_loss, take_profit, analysis)
+                                
+                                if success:
+                                    # تسجيل فتح الصفقة في PerformanceReporter
+                                    self.performance_reporter.record_trade_opened(
+                                        symbol, 
+                                        analysis.get('strategy_type', 'غير محدد'),
+                                        analysis.get('market_phase', 'غير محدد')
+                                    )
+                                    logger.info(f"✅ تم تنفيذ صفقة {direction} لـ {symbol}")
+                    
+                    time.sleep(1)  # فواصل بين الرموز
+                    
+                except Exception as e:
+                    logger.error(f"❌ خطأ في معالجة {symbol}: {e}")
+                    continue
+            
+            logger.info("✅ اكتمل المسح الضوئي المزدوج")
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في المسح الضوئي: {e}")
+
+    def send_performance_report(self):
+        """إرسال تقرير الأداء الأساسي"""
+        self.performance_reporter.generate_performance_report()
+
+    def send_advanced_performance_report(self):
+        """إرسال تقرير الأداء المتقدم"""
+        self.performance_reporter.generate_advanced_performance_report()
+
+    def send_phase_analysis_summary(self):
+        """إرسال ملخص تحليل المراحل لجميع الرموز"""
+        try:
+            analysis_data = {}
+            
+            for symbol in self.symbols:
+                try:
+                    daily_data = self.get_historical_data(symbol, '1d', 100)
+                    if daily_data is not None:
+                        advanced_analysis = self.advanced_analyzer.analyze_market_phase(
+                            daily_data['close'].tolist(),
+                            daily_data['high'].tolist(), 
+                            daily_data['low'].tolist(),
+                            daily_data['volume'].tolist()
+                        )
+                        current_price = self.get_current_price(symbol)
+                        
+                        analysis_data[symbol] = {
+                            'phase': advanced_analysis.get('phase_translation', 'غير محدد'),
+                            'confidence': advanced_analysis.get('confidence', 0),
+                            'price': current_price,
+                            'decision': advanced_analysis.get('trading_decision', 'انتظار')
+                        }
+                        
+                except Exception as e:
+                    logger.error(f"❌ خطأ في تحليل المرحلة لـ {symbol}: {e}")
+                    continue
+            
+            # إرسال ملخص تحليل السوق
+            if analysis_data and self.notifier:
+                self.notifier.send_market_analysis_summary(analysis_data)
+                
+        except Exception as e:
+            logger.error(f"❌ خطأ في إرسال ملخص المراحل: {e}")
+
+    def send_heartbeat(self):
+        """إرسال نبضة"""
+        if self.notifier:
+            active_trades = self.trade_manager.get_active_trades_count()
+            self.notifier.send_heartbeat(active_trades, "نشط")
+
+    def run(self):
+        """تشغيل البوت الرئيسي"""
+        logger.info("🚀 بدء تشغيل بوت العقود الآجلة المتقدم...")
+        
+        # إرسال رسالة بدء التشغيل
+        if self.notifier:
+            self._send_startup_message()
+        
+        try:
+            while True:
+                try:
+                    # تشغيل المهام المجدولة
+                    schedule.run_pending()
+                    
+                    # إعادة تعيين الإحصائيات اليومية إذا تغير التاريخ
+                    self.performance_reporter.reset_daily_stats()
+                    
+                    # تنظيف الرسائل القديمة في الإشعارات
+                    if self.notifier:
+                        self.notifier.cleanup_old_messages()
+                    
+                    # المسح الضوئي وتنفيذ الصفقات
+                    self.scan_and_trade()
+                    
+                    sleep_minutes = TRADING_SETTINGS['rescan_interval_minutes']
+                    logger.info(f"⏳ انتظار {sleep_minutes} دقيقة للمسح التالي...")
+                    time.sleep(sleep_minutes * 60)
+                    
+                except KeyboardInterrupt:
+                    logger.info("⏹️ إيقاف البوت يدوياً...")
+                    if self.notifier:
+                        self.notifier.send_message("🛑 تم إيقاف البوت يدوياً", 'heartbeat')
+                    break
+                except Exception as e:
+                    logger.error(f"❌ خطأ في الحلقة الرئيسية: {e}")
+                    time.sleep(60)  # انتظار دقيقة قبل إعادة المحاولة
+                    
+        except Exception as e:
+            logger.error(f"❌ خطأ غير متوقع: {e}")
+            if self.notifier:
+                self.notifier.send_message(f"❌ خطأ غير متوقع: {str(e)}", 'heartbeat')
+        finally:
+            logger.info("🛑 إيقاف البوت...")
+            if self.notifier:
+                self.notifier.send_message("🛑 تم إيقاف البوت", 'heartbeat')
+
+    def emergency_stop(self):
+        """إيقاف طارئ لجميع الصفقات"""
+        try:
+            logger.warning("🛑 بدء الإيقاف الطارئ لجميع الصفقات...")
+            
+            active_trades = self.trade_manager.get_all_trades()
+            closed_count = 0
+            
+            for symbol, trade in active_trades.items():
+                try:
+                    if self.close_trade(symbol, 'emergency_stop'):
+                        closed_count += 1
+                        logger.info(f"✅ تم إغلاق صفقة {symbol} في الإيقاف الطارئ")
+                    time.sleep(1)  # فواصل بين عمليات الإغلاق
+                except Exception as e:
+                    logger.error(f"❌ فشل إغلاق صفقة {symbol} في الإيقاف الطارئ: {e}")
+            
+            if self.notifier:
+                message = (
+                    f"🛑 <b>الإيقاف الطارئ</b>\n"
+                    f"تم إغلاق {closed_count} من أصل {len(active_trades)} صفقة\n"
+                    f"الوقت: {datetime.now(DAMASCUS_TZ).strftime('%Y-%m-%d %H:%M:%S')}"
+                )
+                self.notifier.send_message(message, 'trade_close')
+            
+            logger.info(f"🛑 اكتمل الإيقاف الطارئ - تم إغلاق {closed_count} صفقة")
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في الإيقاف الطارئ: {e}")
+
+    def get_bot_status(self):
+        """الحصول على حالة البوت الحالية"""
+        active_trades = self.trade_manager.get_active_trades_count()
+        total_symbols = len(self.symbols)
+        
+        strategy_stats = self.performance_reporter.get_strategy_performance_summary()
+        
+        status = {
+            'active': True,
+            'active_trades': active_trades,
+            'total_symbols': total_symbols,
+            'max_trades': TRADING_SETTINGS['max_active_trades'],
+            'current_balance': self.performance_reporter.current_balance,
+            'initial_balance': self.performance_reporter.initial_balance,
+            'performance': {
+                'total_pnl': self.performance_reporter.daily_stats['total_pnl'],
+                'winning_trades': self.performance_reporter.daily_stats['winning_trades'],
+                'losing_trades': self.performance_reporter.daily_stats['losing_trades']
+            },
+            'strategy_performance': strategy_stats,
+            'uptime': str(datetime.now(DAMASCUS_TZ) - self.performance_reporter.start_time)
+        }
+        
+        return status
+
+    def update_trading_settings(self, new_settings):
+        """تحديث إعدادات التداول ديناميكياً"""
+        try:
+            # التحقق من صحة الإعدادات الجديدة
+            required_keys = ['max_active_trades', 'base_trade_size', 'max_leverage']
+            for key in required_keys:
+                if key not in new_settings:
+                    raise ValueError(f"الإعداد {key} مطلوب")
+            
+            # تحديث الإعدادات
+            for key, value in new_settings.items():
+                if key in TRADING_SETTINGS:
+                    old_value = TRADING_SETTINGS[key]
+                    TRADING_SETTINGS[key] = value
+                    logger.info(f"🔄 تم تحديث {key} من {old_value} إلى {value}")
+                else:
+                    logger.warning(f"⚠️ إعداد غير معروف: {key}")
+            
+            # إرسال إشعار بالتحديث
+            if self.notifier:
+                message = (
+                    f"⚙️ <b>تم تحديث إعدادات التداول</b>\n"
+                    f"الصفقات القصوى: {TRADING_SETTINGS['max_active_trades']}\n"
+                    f"حجم الصفقة: ${TRADING_SETTINGS['base_trade_size']}\n"
+                    f"الرافعة: {TRADING_SETTINGS['max_leverage']}x\n"
+                    f"الوقت: {datetime.now(DAMASCUS_TZ).strftime('%H:%M:%S')}"
+                )
+                self.notifier.send_message(message, 'heartbeat')
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في تحديث إعدادات التداول: {e}")
+            return False
+
+
+def main():
+    """الدالة الرئيسية لتشغيل البوت"""
+    try:
+        # اختبار اتصال التلغرام إذا كان مفعل
+        if os.environ.get('TELEGRAM_BOT_TOKEN') and os.environ.get('TELEGRAM_CHAT_ID'):
+            from notifications import TelegramNotifier
+            notifier = TelegramNotifier(os.environ.get('TELEGRAM_BOT_TOKEN'), os.environ.get('TELEGRAM_CHAT_ID'))
+            if notifier.test_connection():
+                logger.info("✅ اختبار اتصال Telegram ناجح")
+            else:
+                logger.warning("⚠️ فشل اختبار اتصال Telegram، سيتم التشغيل بدون إشعارات")
+        
+        # تهيئة وتشغيل البوت
+        bot = FuturesTradingBot()
+        
+        # إضافة معالج للإشارات للإيقاف الآمن
+        import signal
+        def signal_handler(sig, frame):
+            logger.info("🛑 Received interrupt signal, shutting down...")
+            bot.emergency_stop()
+            exit(0)
+        
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+        
+        # تشغيل البوت
+        bot.run()
+        
+    except Exception as e:
+        logger.error(f"❌ فشل تشغيل البوت: {e}")
+        
+        # محاولة إرسال إشعار بالفشل إذا كان التلغرام مفعل
+        try:
+            if 'notifier' in locals():
+                notifier.send_message(f"❌ فشل تشغيل البوت: {str(e)}", 'startup')
+        except:
+            pass
+        
+        raise
+
+
+if __name__ == "__main__":
+    main()
