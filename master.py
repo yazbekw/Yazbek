@@ -730,15 +730,15 @@ class AdvancedTradingBot:
     TRADING_SETTINGS = {
         'symbols': ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "ADAUSDT", "XRPUSDT", "DOTUSDT", "LINKUSDT"],
         'base_trade_size': 20,
-        'max_leverage': 5,
+        'max_leverage': 8,
         'max_active_trades': 4,
         'data_interval': '30m',
         'rescan_interval_minutes': 15,
         'min_signal_confidence': 0.70,
         'short_trading_enabled': True,
         'max_short_trades': 2,
-        'risk_per_trade': 0.33,
-        'max_portfolio_risk': 0.90,
+        'risk_per_trade': 0.20,
+        'max_portfolio_risk': 0.50,
     }
     
     @classmethod
