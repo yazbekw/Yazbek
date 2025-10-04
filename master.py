@@ -230,13 +230,13 @@ class MarketPhaseAnalyzer:
         return f"⚪ {base_action}"
 
 class AdvancedSignalGenerator:
-    """مولد إشارات تداول متقدم"""
+    """مولد إشارات تداول متقدم مع شروط شراء مشددة وبيع مخفف"""
     
     def __init__(self, phase_analyzer):
         self.phase_analyzer = phase_analyzer
     
     def generate_signal(self, symbol, data, current_price):
-        """توليد إشارة تداول متكاملة"""
+        """توليد إشارة تداول مع شروط مخصصة للشراء والبيع"""
         try:
             if len(data) < 50:
                 return None
@@ -250,9 +250,9 @@ class AdvancedSignalGenerator:
             # تحليل القوة
             strength_analysis = self._strength_analysis(data)
             
-            # توليد الإشارات
-            long_signal = self._long_signal(technical_analysis, strength_analysis, phase_analysis)
-            short_signal = self._short_signal(technical_analysis, strength_analysis, phase_analysis)
+            # توليد الإشارات بشروط مخصصة
+            long_signal = self._strict_long_signal(technical_analysis, strength_analysis, phase_analysis)
+            short_signal = self._relaxed_short_signal(technical_analysis, strength_analysis, phase_analysis)
             
             # اختيار أفضل إشارة
             return self._select_signal(symbol, long_signal, short_signal, phase_analysis)
@@ -260,6 +260,120 @@ class AdvancedSignalGenerator:
         except Exception as e:
             logger.error(f"❌ خطأ في توليد الإشارة لـ {symbol}: {e}")
             return None
+    
+    def _strict_long_signal(self, technical, strength, phase_analysis):
+        """إشارة شراء بشروط مشددة"""
+        # 🎯 شروط شراء مشددة جداً
+        strict_buy_conditions = [
+            # 🔒 شروط الاتجاه القوي
+            technical['sma10'] > technical['sma20'] > technical['sma50'],
+            technical['ema12'] > technical['ema26'],
+            technical['close'] > technical['sma20'] * 1.01,  # فوق المتوسط بـ 1%
+            
+            # 🔒 شروط الزخم القوي
+            technical['rsi'] > 52 and technical['rsi'] < 68,  # نطاق أضيق
+            technical['momentum'] > 0.003,  # زخم أقوى
+            technical['macd'] > technical['macd_signal'] * 1.02,  # MACD قوي
+            
+            # 🔒 شروط الحجم والقوة
+            technical['volume_ratio'] > 1.1,  # حجم أعلى
+            technical['trend_strength'] > 1.0,  # اتجاه أقوى
+            strength['volume_strength'] > 1.0,
+            
+            # 🔒 شروط مرحلة السوق
+            phase_analysis['phase'] in ['صعود'],  # فقط في مرحلة الصعود
+            phase_analysis['confidence'] > 0.7,  # ثقة عالية
+            
+            # 🔒 شروط إضافية مشددة
+            technical['price_vs_sma20'] > 0.5,  # سعر أعلى من المتوسط
+            strength['volatility'] < 3.0,  # تقلبات منخفضة
+        ]
+        
+        # 🎯 نظام ترجيح مشدد للشراء
+        strict_weights = [
+            2.5,  # اتجاه قوي
+            2.0,  # EMA
+            1.8,  # فوق المتوسط
+            2.0,  # RSI مشدد
+            2.2,  # زخم قوي
+            1.8,  # MACD قوي
+            1.5,  # حجم عالي
+            1.8,  # اتجاه أقوى
+            1.2,  # قوة حجم
+            2.5,  # مرحلة صعود فقط
+            2.0,  # ثقة عالية
+            1.5,  # سعر أعلى
+            1.2,  # تقلبات منخفضة
+        ]
+        
+        signal_score = sum(cond * weight for cond, weight in zip(strict_buy_conditions, strict_weights))
+        max_score = sum(strict_weights)
+        
+        return {
+            'direction': 'LONG',
+            'score': signal_score,
+            'confidence': signal_score / max_score,
+            'conditions_met': sum(strict_buy_conditions),
+            'total_conditions': len(strict_buy_conditions),
+            'strict_conditions': True  # 🎯 إشارة على أن الشروط مشددة
+        }
+    
+    def _relaxed_short_signal(self, technical, strength, phase_analysis):
+        """إشارة بيع بشروط مخففة"""
+        # 🎯 شروط بيع مخففة
+        relaxed_sell_conditions = [
+            # 📉 شروط اتجاه مخففة
+            technical['sma10'] < technical['sma20'],  # لا يشترط ترتيب كامل
+            technical['ema12'] < technical['ema26'],
+            technical['close'] < technical['sma20'] * 1.02,  # مسموح أن يكون قريب من المتوسط
+            
+            # 📉 شروط زخم مخففة
+            technical['rsi'] < 58 and technical['rsi'] > 25,  # نطاق أوسع
+            technical['momentum'] < -0.001,  # زخم سلبي طفيف
+            technical['macd'] < technical['macd_signal'] * 1.01,  # MACD سلبي طفيف
+            
+            # 📉 شروط حجم مخففة
+            technical['volume_ratio'] > 0.7,  # حجم مقبول (ليس بالضرورة عالي)
+            technical['trend_strength'] < -0.3,  # اتجاه هابط طفيف
+            strength['volume_strength'] > 0.6,
+            
+            # 📉 شروط مرحلة السوق مخففة
+            phase_analysis['phase'] in ['توزيع', 'هبوط', 'تجميع'],  # مراحل متعددة مسموحة
+            phase_analysis['confidence'] > 0.5,  # ثقة متوسطة
+            
+            # 📉 شروط إضافية مخففة
+            technical['price_vs_sma20'] < 2.0,  # مسموح انحراف أكبر
+            strength['volatility'] < 5.0,  # تقلبات أعلى مسموحة
+        ]
+        
+        # 🎯 نظام ترجيح مخفف للبيع
+        relaxed_weights = [
+            2.0,  # اتجاه هابط
+            1.8,  # EMA
+            1.5,  # تحت المتوسط
+            1.8,  # RSI مخفف
+            1.6,  # زخم سلبي
+            1.5,  # MACD سلبي
+            1.0,  # حجم مقبول
+            1.5,  # اتجاه هابط طفيف
+            0.8,  # قوة حجم
+            2.0,  # مراحل متعددة
+            1.5,  # ثقة متوسطة
+            1.0,  # انحراف مسموح
+            0.8,  # تقلبات مسموحة
+        ]
+        
+        signal_score = sum(cond * weight for cond, weight in zip(relaxed_sell_conditions, relaxed_weights))
+        max_score = sum(relaxed_weights)
+        
+        return {
+            'direction': 'SHORT',
+            'score': signal_score,
+            'confidence': signal_score / max_score,
+            'conditions_met': sum(relaxed_sell_conditions),
+            'total_conditions': len(relaxed_sell_conditions),
+            'relaxed_conditions': True  # 🎯 إشارة على أن الشروط مخففة
+        }
     
     def _technical_analysis(self, data, current_price):
         """التحليل الفني المتقدم"""
@@ -278,7 +392,6 @@ class AdvancedSignalGenerator:
         # MACD
         df['macd'] = df['ema12'] - df['ema26']
         df['macd_signal'] = df['macd'].ewm(span=9).mean()
-        df['macd_hist'] = df['macd'] - df['macd_signal']
         
         # الزخم
         df['momentum'] = df['close'].pct_change(5)
@@ -287,19 +400,25 @@ class AdvancedSignalGenerator:
         df['volume_sma'] = df['volume'].rolling(20).mean()
         df['volume_ratio'] = df['volume'] / df['volume_sma']
         
+        # قوة الاتجاه
+        df['trend_strength'] = (df['sma10'] - df['sma50']) / df['sma50'] * 100
+        
         latest = df.iloc[-1]
         
         return {
             'sma10': latest['sma10'],
             'sma20': latest['sma20'], 
             'sma50': latest['sma50'],
+            'ema12': latest['ema12'],
+            'ema26': latest['ema26'],
             'rsi': latest['rsi'],
             'macd': latest['macd'],
             'macd_signal': latest['macd_signal'],
             'momentum': latest['momentum'],
             'volume_ratio': latest['volume_ratio'],
+            'trend_strength': latest['trend_strength'],
             'price_vs_sma20': (current_price - latest['sma20']) / latest['sma20'] * 100,
-            'trend_strength': (latest['sma10'] - latest['sma50']) / latest['sma50'] * 100
+            'close': latest['close']
         }
     
     def _calculate_rsi(self, prices, period):
@@ -317,89 +436,78 @@ class AdvancedSignalGenerator:
         df = data.copy()
         
         volatility = df['close'].pct_change().std() * 100
-        trend_strength = abs(df['close'].iloc[-1] - df['close'].rolling(20).mean().iloc[-1]) / df['close'].rolling(20).std().iloc[-1]
         volume_strength = df['volume'].iloc[-1] / df['volume'].rolling(20).mean().iloc[-1]
         
         return {
             'volatility': volatility,
-            'trend_strength': trend_strength,
             'volume_strength': volume_strength
         }
     
-    def _long_signal(self, technical, strength, phase_analysis):
-        """إشارة الشراء"""
-        conditions = [
-            technical['sma10'] > technical['sma20'] > technical['sma50'],
-            technical['rsi'] > 45 and technical['rsi'] < 70,
-            technical['macd'] > technical['macd_signal'],
-            technical['momentum'] > 0.001,
-            technical['volume_ratio'] > 0.8,
-            technical['trend_strength'] > 0.5,
-            phase_analysis['phase'] in ['تجميع', 'صعود'],
-            phase_analysis['confidence'] > 0.6
-        ]
-        
-        weights = [2.0, 1.5, 1.5, 1.3, 1.0, 1.2, 2.0, 1.8]
-        score = sum(cond * weight for cond, weight in zip(conditions, weights))
-        
-        return {
-            'direction': 'LONG',
-            'score': score,
-            'confidence': score / sum(weights),
-            'conditions_met': sum(conditions)
-        }
-    
-    def _short_signal(self, technical, strength, phase_analysis):
-        """إشارة البيع"""
-        conditions = [
-            technical['sma10'] < technical['sma20'] < technical['sma50'],
-            technical['rsi'] < 55 and technical['rsi'] > 30,
-            technical['macd'] < technical['macd_signal'],
-            technical['momentum'] < -0.001,
-            technical['volume_ratio'] > 0.8,
-            technical['trend_strength'] < -0.5,
-            phase_analysis['phase'] in ['توزيع', 'هبوط'],
-            phase_analysis['confidence'] > 0.6
-        ]
-        
-        weights = [2.0, 1.5, 1.5, 1.3, 1.0, 1.2, 2.0, 1.8]
-        score = sum(cond * weight for cond, weight in zip(conditions, weights))
-        
-        return {
-            'direction': 'SHORT', 
-            'score': score,
-            'confidence': score / sum(weights),
-            'conditions_met': sum(conditions)
-        }
-    
     def _select_signal(self, symbol, long_signal, short_signal, phase_analysis):
-        """اختيار أفضل إشارة"""
-        min_confidence = 0.65
-        min_conditions = 5
+        """اختيار أفضل إشارة مع عتبات مخصصة"""
+        # 🎯 عتبات مختلفة للشراء والبيع
+        min_long_confidence = 0.72      # 🔒 عتبة عالية للشراء
+        min_short_confidence = 0.60     # 📉 عتبة منخفضة للبيع
+        min_long_conditions = 9         # 🔒 شروط أكثر للشراء
+        min_short_conditions = 7        # 📉 شروط أقل للبيع
         
         valid_signals = []
         
-        if (long_signal['confidence'] >= min_confidence and 
-            long_signal['conditions_met'] >= min_conditions):
+        # 🔒 التحقق من إشارة الشراء (بشروط مشددة)
+        if (long_signal['confidence'] >= min_long_confidence and 
+            long_signal['conditions_met'] >= min_long_conditions):
             valid_signals.append(long_signal)
             
-        if (short_signal['confidence'] >= min_confidence and 
-            short_signal['conditions_met'] >= min_conditions):
+        # 📉 التحقق من إشارة البيع (بشروط مخففة)
+        if (short_signal['confidence'] >= min_short_confidence and 
+            short_signal['conditions_met'] >= min_short_conditions):
             valid_signals.append(short_signal)
         
         if not valid_signals:
             return None
         
+        # اختيار الإشارة ذات الثقة الأعلى
         best_signal = max(valid_signals, key=lambda x: x['confidence'])
         
-        return {
+        # 🎯 إضافة معلومات عن صرامة الشروط
+        signal_info = {
             'symbol': symbol,
             'direction': best_signal['direction'],
             'confidence': best_signal['confidence'],
             'score': best_signal['score'],
             'phase_analysis': phase_analysis,
+            'timestamp': datetime.now(damascus_tz),
+            'conditions_met': best_signal['conditions_met'],
+            'total_conditions': best_signal['total_conditions'],
+            'strict_conditions': best_signal.get('strict_conditions', False),
+            'relaxed_conditions': best_signal.get('relaxed_conditions', False)
+        }
+        
+        # 📊 تسجيل معلومات الإشارة
+        logger.info(f"🎯 إشارة {symbol}: {best_signal['direction']} "
+                   f"(ثقة: {best_signal['confidence']:.2%}, "
+                   f"شروط: {best_signal['conditions_met']}/{best_signal['total_conditions']}, "
+                   f"نوع: {'مشددة' if best_signal.get('strict_conditions') else 'مخففة'})")
+        
+        return signal_info
+    
+    def get_signal_stats(self, symbol, technical, phase_analysis):
+        """الحصول على إحصائيات الإشارة للمراقبة"""
+        long_signal = self._strict_long_signal(technical, self._strength_analysis(pd.DataFrame([technical])), phase_analysis)
+        short_signal = self._relaxed_short_signal(technical, self._strength_analysis(pd.DataFrame([technical])), phase_analysis)
+        
+        return {
+            'symbol': symbol,
+            'long_confidence': long_signal['confidence'],
+            'short_confidence': short_signal['confidence'],
+            'long_conditions': f"{long_signal['conditions_met']}/{long_signal['total_conditions']}",
+            'short_conditions': f"{short_signal['conditions_met']}/{short_signal['total_conditions']}",
+            'long_meets_threshold': long_signal['confidence'] >= 0.72 and long_signal['conditions_met'] >= 9,
+            'short_meets_threshold': short_signal['confidence'] >= 0.60 and short_signal['conditions_met'] >= 7,
             'timestamp': datetime.now(damascus_tz)
         }
+    
+
 
 class TradeManager:
     """مدير الصفقات المتقدم"""
