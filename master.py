@@ -626,6 +626,104 @@ class TelegramNotifier:
         )
         return self.send_message(message, 'trade_signal')
 
+
+class HybridExitManager:
+    """مدير خروج هجين يجمع بين الوقف الآلي والمراقبة"""
+    
+    def __init__(self, bot):
+        self.bot = bot
+    
+    def manage_trade_exits(self, symbol, trade):
+        """إدارة خيارات الخروج للصفقة"""
+        try:
+            current_price = self.bot.get_current_price(symbol)
+            if not current_price:
+                return
+            
+            # 1. ✅ التحقق من أوامر الوقف على المنصة
+            if self.check_stop_orders_active(symbol):
+                return  # الأوامر نشطة، لا حاجة لفعل شيء
+            
+            # 2. 📊 المراقبة الاستباقية
+            should_exit, reason = self.proactive_monitoring(symbol, trade, current_price)
+            
+            if should_exit:
+                self.bot.close_trade(symbol, f"مراقبة استباقية: {reason}")
+            
+            # 3. 🔄 تحديث مستويات الوقف إذا لزم الأمر
+            self.adjust_stop_levels(symbol, trade, current_price)
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في إدارة الخروج لـ {symbol}: {e}")
+    
+    def check_stop_orders_active(self, symbol):
+        """التحقق من وجود أوامر وقف نشطة"""
+        try:
+            open_orders = self.bot.client.futures_get_open_orders(symbol=symbol)
+            stop_orders = [order for order in open_orders if order['type'] in ['STOP_MARKET', 'TAKE_PROFIT_MARKET']]
+            return len(stop_orders) > 0
+        except:
+            return False
+    
+    def proactive_monitoring(self, symbol, trade, current_price):
+        """مراقبة استباقية للخروج"""
+        # حساب الربح/الخسارة
+        if trade['side'] == 'LONG':
+            pnl_pct = (current_price - trade['entry_price']) / trade['entry_price'] * 100
+        else:
+            pnl_pct = (trade['entry_price'] - current_price) / trade['entry_price'] * 100
+        
+        # شروط الخروج الاستباقية
+        exit_conditions = [
+            (pnl_pct >= 5.0, f"ربح استباقي {pnl_pct:.1f}%"),  # ربح عالي
+            (pnl_pct <= -4.0, f"خسارة استباقية {pnl_pct:.1f}%"),  # خسارة كبيرة
+        ]
+        
+        for condition, reason in exit_conditions:
+            if condition:
+                return True, reason
+        
+        return False, ""
+    
+    def adjust_stop_levels(self, symbol, trade, current_price):
+        """تعديل مستويات الوقف (Trailing Stop)"""
+        try:
+            if trade['side'] == 'LONG' and trade.get('stop_loss_price'):
+                # رفع وقف الخسارة عند تحقيق ربح
+                profit_pct = (current_price - trade['entry_price']) / trade['entry_price'] * 100
+                if profit_pct > 2.0:
+                    new_stop = trade['entry_price'] * 1.005  # وقف عند 0.5% ربح
+                    if new_stop > trade['stop_loss_price']:
+                        self.update_stop_loss(symbol, trade, new_stop)
+                        
+        except Exception as e:
+            logger.error(f"❌ خطأ في تعديل وقف الخسارة: {e}")
+    
+    def update_stop_loss(self, symbol, trade, new_stop_price):
+        """تحديث وقف الخسارة"""
+        try:
+            # إلغاء وقف الخسارة القديم
+            if trade.get('stop_loss_order_id'):
+                self.bot.client.futures_cancel_order(
+                    symbol=symbol, 
+                    orderId=trade['stop_loss_order_id']
+                )
+            
+            # وضع وقف خسارة جديد
+            new_order = self.bot.place_stop_loss_order(
+                symbol, trade['side'], trade['quantity'], new_stop_price
+            )
+            
+            if new_order:
+                # تحديث بيانات الصفقة
+                trade['stop_loss_price'] = new_stop_price
+                trade['stop_loss_order_id'] = new_order['orderId']
+                logger.info(f"🔄 تم تحديث وقف الخسارة لـ {symbol} إلى ${new_stop_price:.4f}")
+                
+        except Exception as e:
+            logger.error(f"❌ فشل تحديث وقف الخسارة لـ {symbol}: {e}")
+
+
 class AdvancedTradingBot:
     _instance = None
     
@@ -673,6 +771,7 @@ class AdvancedTradingBot:
         self.signal_generator = AdvancedSignalGenerator(self.phase_analyzer)
         self.notifier = TelegramNotifier(self.telegram_token, self.telegram_chat_id)
         self.trade_manager = TradeManager(self.client, self.notifier)
+        self.exit_manager = HybridExitManager(self)
         
         # إدارة الرصيد الحقيقي
         self.symbol_balances = self._initialize_real_balances()
@@ -793,6 +892,8 @@ class AdvancedTradingBot:
                 try:
                     self.trade_manager.sync_with_exchange()
                     self.update_real_time_balance()
+                    self.sync_stop_orders()  # ✅ مزامنة أوامر الوقف
+                    self.manage_active_trades_exits()
                     time.sleep(60)
                 except Exception as e:
                     logger.error(f"❌ خطأ في المزامنة: {e}")
@@ -805,6 +906,15 @@ class AdvancedTradingBot:
             schedule.every(2).hours.do(self.send_balance_report)
             schedule.every(1).hours.do(self.send_heartbeat)
 
+    def manage_active_trades_exits(self):
+        """إدارة خروج الصفقات النشطة باستخدام النظام الهجين"""
+        try:
+            active_trades = self.trade_manager.get_all_trades()
+            for symbol, trade in active_trades.items():
+                self.exit_manager.manage_trade_exits(symbol, trade)
+        except Exception as e:
+            logger.error(f"❌ خطأ في إدارة خروج الصفقات: {e}")
+
     def send_startup_message(self):
         """إرسال رسالة بدء التشغيل"""
         if self.notifier:
@@ -816,7 +926,7 @@ class AdvancedTradingBot:
                 f"الرصيد المتاح: ${balance['available_balance']:.2f}\n"
                 f"الأصول: {len(self.TRADING_SETTINGS['symbols'])}\n"
                 f"الصفقات القصوى: {self.TRADING_SETTINGS['max_active_trades']}\n"
-                f"📊 <b>الإستراتيجية:</b> تحليل المراحل + الرصيد الحقيقي"
+                f"📊 <b>الإستراتيجية:</b> تحليل المراحل + الرصيد الحقيقي + أوامر الوقف"
             )
             self.notifier.send_message(message)
 
@@ -1039,12 +1149,214 @@ class AdvancedTradingBot:
             logger.error(f"❌ خطأ في التحقق من الرصيد: {e}")
             return False
 
+    def calculate_stop_loss_take_profit(self, symbol, direction, entry_price, signal):
+        """حساب مستويات الوقف وجني الأرباح بناءً على التقلبات والإستراتيجية"""
+        try:
+            # ✅ جلب البيانات التاريخية لحساب التقلبات
+            data = self.get_historical_data(symbol, '1h', 50)
+            if data is None:
+                # استخدام نسب ثابتة إذا فشل جلب البيانات
+                return self._calculate_fixed_stop_levels(direction, entry_price)
+            
+            # ✅ حساب ATR (Average True Range) للتقلبات
+            atr = self.calculate_atr(data)
+            if atr == 0:
+                atr = entry_price * 0.02  # قيمة افتراضية إذا كان ATR صفر
+            
+            # ✅ تحديد المستويات بناءً على اتجاه الصفقة
+            if direction == 'LONG':
+                # 🟢 صفقات الشراء
+                stop_loss_distance = atr * 1.8  # وقف عند 1.8x ATR
+                take_profit_distance = atr * 3.2  # جني عند 3.2x ATP
+                
+                stop_loss_price = entry_price - stop_loss_distance
+                take_profit_price = entry_price + take_profit_distance
+                
+                # ✅ ضمان مستويات واقعية
+                stop_loss_price = max(stop_loss_price, entry_price * 0.97)  # أقصى خسارة 3%
+                take_profit_price = min(take_profit_price, entry_price * 1.06)  # أقصى ربح 6%
+                
+            else:
+                # 🔴 صفقات البيع
+                stop_loss_distance = atr * 1.8
+                take_profit_distance = atr * 3.2
+                
+                stop_loss_price = entry_price + stop_loss_distance
+                take_profit_price = entry_price - take_profit_distance
+                
+                # ✅ ضمان مستويات واقعية
+                stop_loss_price = min(stop_loss_price, entry_price * 1.03)  # أقصى خسارة 3%
+                take_profit_price = max(take_profit_price, entry_price * 0.94)  # أقصى ربح 6%
+            
+            # ✅ تعديل المستويات بناءً على ثقة الإشارة
+            confidence = signal.get('confidence', 0.5)
+            if confidence > 0.75:
+                # زيادة جني الأرباح للإشارات عالية الثقة
+                if direction == 'LONG':
+                    take_profit_price = min(take_profit_price * 1.1, entry_price * 1.08)
+                else:
+                    take_profit_price = max(take_profit_price * 0.9, entry_price * 0.92)
+            
+            # ✅ تقريب الأسعار حسب متطلبات المنصة
+            stop_loss_price = self.adjust_price_to_tick_size(symbol, stop_loss_price)
+            take_profit_price = self.adjust_price_to_tick_size(symbol, take_profit_price)
+            
+            logger.info(f"📊 مستويات {symbol}: دخول ${entry_price:.4f} | وقف ${stop_loss_price:.4f} | جني ${take_profit_price:.4f}")
+            
+            return stop_loss_price, take_profit_price
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في حساب مستويات الوقف لـ {symbol}: {e}")
+            return self._calculate_fixed_stop_levels(direction, entry_price)
+
+    def _calculate_fixed_stop_levels(self, direction, entry_price):
+        """حساب مستويات وقف ثابتة كبديل"""
+        if direction == 'LONG':
+            stop_loss_price = entry_price * 0.98  # وقف 2%
+            take_profit_price = entry_price * 1.04  # جني 4%
+        else:
+            stop_loss_price = entry_price * 1.02  # وقف 2%
+            take_profit_price = entry_price * 0.96  # جني 4%
+        
+        logger.info(f"📊 استخدام مستويات وقف ثابتة: وقف {stop_loss_price:.4f} | جني {take_profit_price:.4f}")
+        return stop_loss_price, take_profit_price
+
+    def calculate_atr(self, data, period=14):
+        """حساب Average True Range"""
+        try:
+            df = data.copy()
+            high = df['high']
+            low = df['low']
+            close = df['close']
+            
+            # حساب True Range
+            tr1 = high - low
+            tr2 = abs(high - close.shift())
+            tr3 = abs(low - close.shift())
+            
+            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            atr = true_range.rolling(period).mean().iloc[-1]
+            
+            return atr if not pd.isna(atr) else 0
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في حساب ATR: {e}")
+            return 0
+
+    def adjust_price_to_tick_size(self, symbol, price):
+        """تقريب السعر حسب tick size المنصة"""
+        try:
+            exchange_info = self.client.futures_exchange_info()
+            symbol_info = next((s for s in exchange_info['symbols'] if s['symbol'] == symbol), None)
+            
+            if symbol_info:
+                price_filter = next((f for f in symbol_info['filters'] if f['filterType'] == 'PRICE_FILTER'), None)
+                if price_filter:
+                    tick_size = float(price_filter['tickSize'])
+                    price = round(price / tick_size) * tick_size
+            
+            return round(price, 6)
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في تقريب السعر: {e}")
+            return round(price, 4)
+
+    def place_stop_loss_order(self, symbol, direction, quantity, stop_price):
+        """وضع أمر وقف الخسارة"""
+        try:
+            if direction == 'LONG':
+                stop_side = 'SELL'
+            else:
+                stop_side = 'BUY'
+            
+            # تقريب السعر حسب متطلبات المنصة
+            stop_price = self.adjust_price_to_tick_size(symbol, stop_price)
+            
+            order = self.client.futures_create_order(
+                symbol=symbol,
+                side=stop_side,
+                type='STOP_MARKET',
+                quantity=quantity,
+                stopPrice=stop_price,
+                reduceOnly=True,
+                timeInForce='GTC'
+            )
+            
+            logger.info(f"🛡️ تم وضع وقف خسارة لـ {symbol} عند ${stop_price:.4f}")
+            return order
+            
+        except Exception as e:
+            logger.error(f"❌ فشل وضع وقف خسارة لـ {symbol}: {e}")
+            return None
+
+    def place_take_profit_order(self, symbol, direction, quantity, take_profit_price):
+        """وضع أمر جني الأرباح"""
+        try:
+            if direction == 'LONG':
+                tp_side = 'SELL'
+            else:
+                tp_side = 'BUY'
+            
+            # تقريب السعر حسب متطلبات المنصة
+            take_profit_price = self.adjust_price_to_tick_size(symbol, take_profit_price)
+            
+            order = self.client.futures_create_order(
+                symbol=symbol,
+                side=tp_side,
+                type='TAKE_PROFIT_MARKET',
+                quantity=quantity,
+                stopPrice=take_profit_price,
+                reduceOnly=True,
+                timeInForce='GTC'
+            )
+            
+            logger.info(f"🎯 تم وضع جني أرباح لـ {symbol} عند ${take_profit_price:.4f}")
+            return order
+            
+        except Exception as e:
+            logger.error(f"❌ فشل وضع جني أرباح لـ {symbol}: {e}")
+            return None
+
+    def sync_stop_orders(self):
+        """مزامنة أوامر الوقف مع الصفقات النشطة"""
+        try:
+            active_trades = self.trade_manager.get_all_trades()
+            
+            for symbol, trade in active_trades.items():
+                try:
+                    open_orders = self.client.futures_get_open_orders(symbol=symbol)
+                    
+                    # البحث عن أوامر الوقف المرتبطة بالصفقة
+                    has_stop_loss = any(order['type'] == 'STOP_MARKET' for order in open_orders)
+                    has_take_profit = any(order['type'] == 'TAKE_PROFIT_MARKET' for order in open_orders)
+                    
+                    # إذا لم توجد أوامر وقف، إنشاؤها
+                    if not has_stop_loss and trade.get('stop_loss_price'):
+                        logger.info(f"🔄 إعادة وضع وقف خسارة لـ {symbol}")
+                        self.place_stop_loss_order(
+                            symbol, trade['side'], trade['quantity'], trade['stop_loss_price']
+                        )
+                    
+                    if not has_take_profit and trade.get('take_profit_price'):
+                        logger.info(f"🔄 إعادة وضع جني أرباح لـ {symbol}")
+                        self.place_take_profit_order(
+                            symbol, trade['side'], trade['quantity'], trade['take_profit_price']
+                        )
+                        
+                except Exception as e:
+                    logger.error(f"❌ خطأ في مزامنة أوامر الوقف لـ {symbol}: {e}")
+                    continue
+                    
+        except Exception as e:
+            logger.error(f"❌ خطأ عام في مزامنة أوامر الوقف: {e}")
+
     def execute_trade(self, signal):
-        """تنفيذ الصفقة مع الرصيد الحقيقي"""
+        """تنفيذ الصفقة مع أوامر وقف خسارة وجني أرباح"""
         try:
             symbol = signal['symbol']
             direction = signal['direction']
             
+            # ✅ التحقق من إمكانية التداول أولاً
             can_trade, reasons = self.can_open_trade(symbol, direction)
             if not can_trade:
                 logger.info(f"⏭️ تخطي {symbol} {direction}: {', '.join(reasons)}")
@@ -1052,20 +1364,37 @@ class AdvancedTradingBot:
             
             current_price = self.get_current_price(symbol)
             if not current_price:
+                logger.error(f"❌ لا يمكن الحصول على سعر {symbol}")
                 return False
             
+            # ✅ حساب حجم آمن بناءً على الرصيد الحقيقي
             quantity = self.calculate_safe_position_size(symbol, direction, current_price)
             if not quantity:
+                logger.warning(f"⚠️ لا يمكن حساب حجم آمن لـ {symbol}")
                 return False
             
             leverage = self.TRADING_SETTINGS['max_leverage'] if direction == 'LONG' else 3
             
+            # ✅ التحقق النهائي من الرصيد قبل التنفيذ
             if not self.final_balance_check(symbol, quantity, current_price, leverage):
                 return False
             
+            # ✅ حساب مستويات الوقف وجني الأرباح
+            stop_loss_price, take_profit_price = self.calculate_stop_loss_take_profit(
+                symbol, direction, current_price, signal
+            )
+            
+            if not stop_loss_price or not take_profit_price:
+                logger.error(f"❌ فشل حساب مستويات الوقف لـ {symbol}")
+                return False
+            
+            # ✅ تعيين الرافعة والهامش
             margin_set_success = self.set_margin_and_leverage(symbol, leverage)
             
+            # ✅ تنفيذ الأمر الرئيسي
             side = 'BUY' if direction == 'LONG' else 'SELL'
+            
+            logger.info(f"🎯 تنفيذ صفقة {symbol}: {direction} | الكمية: {quantity:.6f} | السعر: ${current_price:.4f}")
             
             order = self.client.futures_create_order(
                 symbol=symbol,
@@ -1075,14 +1404,44 @@ class AdvancedTradingBot:
             )
             
             if order and order['orderId']:
+                # ✅ الحصول على سعر التنفيذ الفعلي
                 executed_price = current_price
                 try:
                     order_info = self.client.futures_get_order(symbol=symbol, orderId=order['orderId'])
                     if order_info.get('avgPrice'):
                         executed_price = float(order_info['avgPrice'])
-                except:
-                    pass
+                        logger.info(f"✅ سعر التنفيذ الفعلي لـ {symbol}: ${executed_price:.4f}")
+                except Exception as e:
+                    logger.warning(f"⚠️ لا يمكن الحصول على سعر التنفيذ الفعلي: {e}")
                 
+                # ✅ تحديث مستويات الوقف بناءً على سعر التنفيذ الفعلي
+                stop_loss_price, take_profit_price = self.calculate_stop_loss_take_profit(
+                    symbol, direction, executed_price, signal
+                )
+                
+                # ✅ وضع أوامر الوقف وجني الأرباح
+                stop_loss_order = None
+                take_profit_order = None
+                
+                try:
+                    stop_loss_order = self.place_stop_loss_order(symbol, direction, quantity, stop_loss_price)
+                    time.sleep(0.5)  # انتظار بسيط بين الأوامر
+                    
+                    take_profit_order = self.place_take_profit_order(symbol, direction, quantity, take_profit_price)
+                    time.sleep(0.5)
+                    
+                except Exception as e:
+                    logger.error(f"❌ فشل وضع أوامر الوقف لـ {symbol}: {e}")
+                    # محاولة وضع الأوامر مرة أخرى
+                    try:
+                        if not stop_loss_order:
+                            stop_loss_order = self.place_stop_loss_order(symbol, direction, quantity, stop_loss_price)
+                        if not take_profit_order:
+                            take_profit_order = self.place_take_profit_order(symbol, direction, quantity, take_profit_price)
+                    except Exception as retry_e:
+                        logger.error(f"❌ فشل إعادة وضع أوامر الوقف لـ {symbol}: {retry_e}")
+                
+                # ✅ تسجيل الصفقة
                 trade_data = {
                     'symbol': symbol,
                     'quantity': quantity,
@@ -1095,32 +1454,51 @@ class AdvancedTradingBot:
                     'signal_confidence': signal['confidence'],
                     'phase_analysis': signal['phase_analysis'],
                     'margin_set_success': margin_set_success,
-                    'position_value': quantity * executed_price
+                    'position_value': quantity * executed_price,
+                    # ✅ معلومات الوقف الجديدة
+                    'stop_loss_price': stop_loss_price,
+                    'take_profit_price': take_profit_price,
+                    'stop_loss_order_id': stop_loss_order['orderId'] if stop_loss_order else None,
+                    'take_profit_order_id': take_profit_order['orderId'] if take_profit_order else None,
+                    'initial_risk': abs(executed_price - stop_loss_price) / executed_price * 100,
+                    'reward_ratio': abs(take_profit_price - executed_price) / abs(executed_price - stop_loss_price)
                 }
                 
                 self.trade_manager.add_trade(symbol, trade_data)
                 self.performance_stats['trades_opened'] += 1
                 
+                # ✅ تحديث الرصيد المحلي
                 trade_cost = (quantity * executed_price) / leverage
                 self.symbol_balances[symbol] = max(0, self.symbol_balances[symbol] - trade_cost)
                 
+                # ✅ إرسال إشعار مفصل
                 if self.notifier:
                     current_balance = self.real_time_balance['available_balance']
+                    risk_reward_ratio = trade_data['reward_ratio']
+                    risk_percentage = trade_data['initial_risk']
+                    
                     message = (
                         f"{'🟢' if direction == 'LONG' else '🔴'} <b>تم فتح صفقة جديدة</b>\n"
                         f"العملة: {symbol}\n"
                         f"الاتجاه: {direction}\n"
                         f"الكمية: {quantity:.6f}\n"
-                        f"السعر: ${executed_price:.4f}\n"
+                        f"سعر الدخول: ${executed_price:.4f}\n"
                         f"القيمة: ${quantity * executed_price:.2f}\n"
                         f"الرافعة: {leverage}x\n"
+                        f"🛡️ وقف الخسارة: ${stop_loss_price:.4f}\n"
+                        f"🎯 جني الأرباح: ${take_profit_price:.4f}\n"
+                        f"📊 نسبة المخاطرة: {risk_percentage:.1f}%\n"
+                        f"⚖️ نسبة المكافأة: {risk_reward_ratio:.1f}:1\n"
                         f"الرصيد المتاح: ${current_balance:.2f}\n"
                         f"الثقة: {signal['confidence']:.2%}\n"
+                        f"المرحلة: {signal['phase_analysis']['phase']}\n"
                         f"الوقت: {datetime.now(damascus_tz).strftime('%H:%M:%S')}"
                     )
                     self.notifier.send_message(message)
                 
-                logger.info(f"✅ تم فتح صفقة {direction} لـ {symbol} بالرصيد الحقيقي")
+                logger.info(f"✅ تم فتح صفقة {direction} لـ {symbol} بنجاح")
+                logger.info(f"📊 تفاصيل الصفقة: وقف ${stop_loss_price:.4f} | جني ${take_profit_price:.4f} | نسبة {risk_reward_ratio:.1f}:1")
+                
                 return True
             
             return False
@@ -1139,6 +1517,16 @@ class AdvancedTradingBot:
             current_price = self.get_current_price(symbol)
             if not current_price:
                 return False
+            
+            # ✅ إلغاء أوامر الوقف أولاً
+            try:
+                open_orders = self.client.futures_get_open_orders(symbol=symbol)
+                for order in open_orders:
+                    if order['type'] in ['STOP_MARKET', 'TAKE_PROFIT_MARKET']:
+                        self.client.futures_cancel_order(symbol=symbol, orderId=order['orderId'])
+                        logger.info(f"✅ تم إلغاء أمر وقف لـ {symbol}")
+            except Exception as e:
+                logger.warning(f"⚠️ لا يمكن إلغاء أوامر الوقف لـ {symbol}: {e}")
             
             close_side = 'SELL' if trade['side'] == 'LONG' else 'BUY'
             quantity = trade['quantity']
@@ -1258,7 +1646,9 @@ class AdvancedTradingBot:
                 'leverage': trade['leverage'],
                 'timestamp': trade['timestamp'].isoformat(),
                 'confidence': trade.get('signal_confidence', 0),
-                'phase': trade.get('phase_analysis', {}).get('phase', 'غير محدد')
+                'phase': trade.get('phase_analysis', {}).get('phase', 'غير محدد'),
+                'stop_loss': trade.get('stop_loss_price'),
+                'take_profit': trade.get('take_profit_price')
             }
             for trade in trades.values()
         ]
@@ -1314,6 +1704,7 @@ class AdvancedTradingBot:
             logger.error(f"❌ خطأ غير متوقع: {e}")
         finally:
             logger.info("🛑 إيقاف البوت...")
+
 
 def main():
     """الدالة الرئيسية"""
