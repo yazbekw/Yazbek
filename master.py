@@ -629,7 +629,6 @@ class TelegramNotifier:
 class AdvancedTradingBot:
     _instance = None
     
-    # إعدادات التداول
     TRADING_SETTINGS = {
         'symbols': ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "ADAUSDT", "XRPUSDT", "DOTUSDT", "LINKUSDT"],
         'base_trade_size': 15,
@@ -640,13 +639,14 @@ class AdvancedTradingBot:
         'min_signal_confidence': 0.65,
         'short_trading_enabled': True,
         'max_short_trades': 2,
-        'total_capital': 100
+        'risk_per_trade': 0.15,
+        'max_portfolio_risk': 0.40,
     }
     
     @classmethod
     def get_instance(cls):
         return cls._instance
-    
+
     def __init__(self):
         if AdvancedTradingBot._instance is not None:
             raise Exception("هذه الفئة تستخدم نمط Singleton")
@@ -662,25 +662,28 @@ class AdvancedTradingBot:
         
         try:
             self.client = Client(self.api_key, self.api_secret)
+            self.real_time_balance = self.get_real_time_balance()
             self.test_connection()
         except Exception as e:
             logger.error(f"❌ فشل تهيئة العميل: {e}")
             raise
-        
+
         # تهيئة المكونات
         self.phase_analyzer = MarketPhaseAnalyzer()
         self.signal_generator = AdvancedSignalGenerator(self.phase_analyzer)
         self.notifier = TelegramNotifier(self.telegram_token, self.telegram_chat_id)
         self.trade_manager = TradeManager(self.client, self.notifier)
         
-        # إدارة الرصيد
-        self.symbol_balances = self._initialize_balances()
+        # إدارة الرصيد الحقيقي
+        self.symbol_balances = self._initialize_real_balances()
         self.performance_stats = {
             'trades_opened': 0,
             'trades_closed': 0,
             'winning_trades': 0,
             'losing_trades': 0,
-            'total_pnl': 0.0
+            'total_pnl': 0.0,
+            'initial_balance': self.real_time_balance['total_balance'],
+            'current_balance': self.real_time_balance['total_balance']
         }
         
         # المزامنة الأولية
@@ -691,15 +694,8 @@ class AdvancedTradingBot:
         self.send_startup_message()
         
         AdvancedTradingBot._instance = self
-        logger.info("✅ تم تهيئة البوت المتقدم بنجاح")
-    
-    def _initialize_balances(self):
-        """تهيئة أرصدة الرموز"""
-        total_symbols = len(self.TRADING_SETTINGS['symbols'])
-        base_allocation = self.TRADING_SETTINGS['total_capital'] / total_symbols
-        
-        return {symbol: base_allocation for symbol in self.TRADING_SETTINGS['symbols']}
-    
+        logger.info("✅ تم تهيئة البوت المتقدم بنجاح مع الرصيد الحقيقي")
+
     def test_connection(self):
         """اختبار اتصال API"""
         try:
@@ -709,14 +705,94 @@ class AdvancedTradingBot:
         except Exception as e:
             logger.error(f"❌ فشل الاتصال بـ Binance API: {e}")
             raise
-    
+
+    def get_real_time_balance(self):
+        """جلب الرصيد الحقيقي من منصة Binance"""
+        try:
+            account_info = self.client.futures_account()
+            
+            total_balance = float(account_info['totalWalletBalance'])
+            available_balance = float(account_info['availableBalance'])
+            total_margin_balance = float(account_info['totalMarginBalance'])
+            unrealized_pnl = float(account_info['totalUnrealizedProfit'])
+            
+            assets = {}
+            for asset in account_info['assets']:
+                if float(asset['walletBalance']) > 0:
+                    assets[asset['asset']] = {
+                        'wallet_balance': float(asset['walletBalance']),
+                        'available_balance': float(asset['availableBalance']),
+                        'unrealized_pnl': float(asset.get('unrealizedProfit', 0))
+                    }
+            
+            balance_info = {
+                'total_balance': total_balance,
+                'available_balance': available_balance,
+                'total_margin_balance': total_margin_balance,
+                'unrealized_pnl': unrealized_pnl,
+                'assets': assets,
+                'timestamp': datetime.now(damascus_tz)
+            }
+            
+            logger.info(f"💰 الرصيد الحقيقي: ${total_balance:.2f} | المتاح: ${available_balance:.2f}")
+            return balance_info
+            
+        except Exception as e:
+            logger.error(f"❌ فشل جلب الرصيد الحقيقي: {e}")
+            return {
+                'total_balance': 100.0,
+                'available_balance': 100.0,
+                'total_margin_balance': 100.0,
+                'unrealized_pnl': 0.0,
+                'assets': {},
+                'timestamp': datetime.now(damascus_tz)
+            }
+
+    def _initialize_real_balances(self):
+        """تهيئة أرصدة الرموز بناءً على الرصيد الحقيقي"""
+        try:
+            total_balance = self.real_time_balance['available_balance']
+            total_symbols = len(self.TRADING_SETTINGS['symbols'])
+            
+            base_allocation = total_balance / total_symbols
+            
+            symbol_balances = {}
+            for symbol in self.TRADING_SETTINGS['symbols']:
+                symbol_balances[symbol] = base_allocation
+            
+            logger.info(f"💰 توزيع الرصيد الحقيقي: ${total_balance:.2f} على {total_symbols} رموز")
+            return symbol_balances
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في توزيع الرصيد الحقيقي: {e}")
+            return {symbol: 20.0 for symbol in self.TRADING_SETTINGS['symbols']}
+
+    def update_real_time_balance(self):
+        """تحديث الرصيد الحقيقي من المنصة"""
+        try:
+            old_balance = self.real_time_balance['total_balance']
+            self.real_time_balance = self.get_real_time_balance()
+            new_balance = self.real_time_balance['total_balance']
+            
+            self.performance_stats['current_balance'] = new_balance
+            
+            balance_change = new_balance - old_balance
+            if abs(balance_change) > 0.01:
+                logger.info(f"📈 تغير الرصيد: ${old_balance:.2f} → ${new_balance:.2f} ({balance_change:+.2f})")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ فشل تحديث الرصيد الحقيقي: {e}")
+            return False
+
     def start_services(self):
         """بدء الخدمات المساعدة"""
-        # خدمة المزامنة
         def sync_thread():
             while True:
                 try:
                     self.trade_manager.sync_with_exchange()
+                    self.update_real_time_balance()
                     time.sleep(60)
                 except Exception as e:
                     logger.error(f"❌ خطأ في المزامنة: {e}")
@@ -724,24 +800,26 @@ class AdvancedTradingBot:
         
         threading.Thread(target=sync_thread, daemon=True).start()
         
-        # خدمة التقارير
         if self.notifier:
             schedule.every(4).hours.do(self.send_performance_report)
+            schedule.every(2).hours.do(self.send_balance_report)
             schedule.every(1).hours.do(self.send_heartbeat)
-    
+
     def send_startup_message(self):
         """إرسال رسالة بدء التشغيل"""
         if self.notifier:
+            balance = self.real_time_balance
             message = (
-                "🚀 <b>بدء تشغيل البوت المتقدم</b>\n"
+                "🚀 <b>بدء تشغيل البوت المتقدم بالرصيد الحقيقي</b>\n"
                 f"الوقت: {datetime.now(damascus_tz).strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"الرصيد الإجمالي: ${balance['total_balance']:.2f}\n"
+                f"الرصيد المتاح: ${balance['available_balance']:.2f}\n"
                 f"الأصول: {len(self.TRADING_SETTINGS['symbols'])}\n"
-                f"رأس المال: ${self.TRADING_SETTINGS['total_capital']}\n"
                 f"الصفقات القصوى: {self.TRADING_SETTINGS['max_active_trades']}\n"
-                f"📊 <b>الإستراتيجية:</b> تحليل المراحل + الإشارات المتقدمة"
+                f"📊 <b>الإستراتيجية:</b> تحليل المراحل + الرصيد الحقيقي"
             )
             self.notifier.send_message(message)
-    
+
     def send_performance_report(self):
         """إرسال تقرير الأداء"""
         if not self.notifier:
@@ -755,17 +833,46 @@ class AdvancedTradingBot:
             f"الصفقات المغلقة: {self.performance_stats['trades_closed']}\n"
             f"الصفقات الرابحة: {self.performance_stats['winning_trades']}\n"
             f"الصفقات الخاسرة: {self.performance_stats['losing_trades']}\n"
+            f"الرصيد الحالي: ${self.performance_stats['current_balance']:.2f}\n"
             f"الوقت: {datetime.now(damascus_tz).strftime('%H:%M:%S')}"
         )
         self.notifier.send_message(message)
-    
+
+    def send_balance_report(self):
+        """إرسال تقرير بالرصيد الحقيقي"""
+        if not self.notifier:
+            return
+        
+        try:
+            self.update_real_time_balance()
+            
+            balance = self.real_time_balance
+            active_trades = self.trade_manager.get_active_trades_count()
+            total_risk = self.calculate_total_portfolio_risk()
+            
+            message = (
+                f"💰 <b>تقرير الرصيد الحقيقي</b>\n"
+                f"الرصيد الإجمالي: ${balance['total_balance']:.2f}\n"
+                f"الرصيد المتاح: ${balance['available_balance']:.2f}\n"
+                f"الهامش الإجمالي: ${balance['total_margin_balance']:.2f}\n"
+                f"PNL غير محقق: ${balance['unrealized_pnl']:+.2f}\n"
+                f"الصفقات النشطة: {active_trades}\n"
+                f"مخاطرة المحفظة: ${total_risk:.2f}\n"
+                f"آخر تحديث: {datetime.now(damascus_tz).strftime('%H:%M:%S')}"
+            )
+            
+            self.notifier.send_message(message, 'balance_report')
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في إرسال تقرير الرصيد: {e}")
+
     def send_heartbeat(self):
         """إرسال نبضة"""
         if self.notifier:
             active_trades = self.trade_manager.get_active_trades_count()
             message = f"💓 البوت نشط - الصفقات النشطة: {active_trades}"
             self.notifier.send_message(message)
-    
+
     def get_historical_data(self, symbol, interval, limit=100):
         """جلب البيانات التاريخية"""
         try:
@@ -792,7 +899,7 @@ class AdvancedTradingBot:
         except Exception as e:
             logger.error(f"❌ خطأ في جلب البيانات لـ {symbol}: {e}")
             return None
-    
+
     def get_current_price(self, symbol):
         """الحصول على السعر الحالي"""
         try:
@@ -801,55 +908,81 @@ class AdvancedTradingBot:
         except Exception as e:
             logger.error(f"❌ خطأ في الحصول على سعر {symbol}: {e}")
             return None
-    
+
     def can_open_trade(self, symbol, direction):
         """التحقق من إمكانية فتح صفقة"""
         reasons = []
         
-        # التحقق من الحد الأقصى للصفقات
         if self.trade_manager.get_active_trades_count() >= self.TRADING_SETTINGS['max_active_trades']:
             reasons.append("الحد الأقصى للصفقات")
         
-        # التحقق من صفقات البيع
         if direction == 'SHORT':
             active_shorts = sum(1 for trade in self.trade_manager.get_all_trades().values() 
                               if trade['side'] == 'SHORT')
             if active_shorts >= self.TRADING_SETTINGS['max_short_trades']:
                 reasons.append("الحد الأقصى لصفقات البيع")
         
-        # التحقق من الصفقات النشطة على الرمز
         if self.trade_manager.is_symbol_trading(symbol):
             reasons.append("صفقة نشطة على الرمز")
         
-        # التحقق من الرصيد
-        available_balance = self.symbol_balances.get(symbol, 0)
+        available_balance = self.real_time_balance['available_balance']
         if available_balance < 5:
             reasons.append("رصيد غير كافي")
         
         return len(reasons) == 0, reasons
-    
-    def calculate_position_size(self, symbol, direction, current_price):
-        """حساب حجم المركز"""
+
+    def calculate_safe_position_size(self, symbol, direction, current_price):
+        """حساب حجم آمن بناءً على الرصيد الحقيقي"""
         try:
-            available_balance = self.symbol_balances.get(symbol, self.TRADING_SETTINGS['base_trade_size'])
+            self.update_real_time_balance()
             
-            # استخدام رافعة أقل للبيع
-            leverage = self.TRADING_SETTINGS['max_leverage']
-            if direction == 'SHORT':
-                leverage = min(leverage, 3)  # حد أقصى 3x للبيع
+            available_balance = self.real_time_balance['available_balance']
             
-            position_value = min(available_balance * leverage, self.TRADING_SETTINGS['base_trade_size'])
+            if available_balance <= 0:
+                logger.error(f"❌ الرصيد المتاح صفر أو سالب: ${available_balance:.2f}")
+                return None
+            
+            risk_amount = available_balance * self.TRADING_SETTINGS['risk_per_trade']
+            
+            leverage = self.TRADING_SETTINGS['max_leverage'] if direction == 'LONG' else 3
+            
+            position_value = min(risk_amount * leverage, self.TRADING_SETTINGS['base_trade_size'] * leverage)
+            
+            total_risk = self.calculate_total_portfolio_risk()
+            if total_risk + risk_amount > available_balance * self.TRADING_SETTINGS['max_portfolio_risk']:
+                logger.warning(f"⚠️ تجاوز حد مخاطرة المحفظة")
+                position_value *= 0.5
+            
             quantity = position_value / current_price
             
-            # تقريب الكمية
             quantity = self.adjust_quantity(symbol, quantity)
             
-            return quantity if quantity and quantity > 0 else None
+            if quantity and quantity > 0:
+                logger.info(f"💰 حجم الصفقة لـ {symbol}: {quantity:.6f} (قيمة: ${position_value:.2f})")
+                return quantity
+            
+            return None
             
         except Exception as e:
-            logger.error(f"❌ خطأ في حساب حجم المركز لـ {symbol}: {e}")
+            logger.error(f"❌ خطأ في حساب حجم المركز الآمن لـ {symbol}: {e}")
             return None
-    
+
+    def calculate_total_portfolio_risk(self):
+        """حساب إجمالي مخاطرة المحفظة الحالية"""
+        try:
+            total_risk = 0.0
+            
+            for symbol, trade in self.trade_manager.get_all_trades().items():
+                position_value = trade['quantity'] * trade['entry_price']
+                risk_per_trade = position_value / trade['leverage']
+                total_risk += risk_per_trade
+            
+            return total_risk
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في حساب مخاطرة المحفظة: {e}")
+            return 0.0
+
     def adjust_quantity(self, symbol, quantity):
         """ضبط الكمية حسب متطلبات المنصة"""
         try:
@@ -876,14 +1009,42 @@ class AdvancedTradingBot:
         except Exception as e:
             logger.error(f"❌ خطأ في ضبط الكمية: {e}")
             return None
-    
+
+    def set_margin_and_leverage(self, symbol, leverage):
+        """تعيين الرافعة والهامش"""
+        try:
+            self.client.futures_change_leverage(symbol=symbol, leverage=leverage)
+            self.client.futures_change_margin_type(symbol=symbol, marginType='ISOLATED')
+            return True
+        except Exception as e:
+            logger.warning(f"⚠️ خطأ في تعيين الرافعة/الهامش: {e}")
+            return False
+
+    def final_balance_check(self, symbol, quantity, current_price, leverage):
+        """تحقق نهائي من الرصيد قبل التنفيذ"""
+        try:
+            self.update_real_time_balance()
+            
+            required_margin = (quantity * current_price) / leverage
+            available_balance = self.real_time_balance['available_balance']
+            
+            if required_margin > available_balance:
+                logger.error(f"❌ رصيد غير كافي لـ {symbol}: مطلوب ${required_margin:.2f} | متاح ${available_balance:.2f}")
+                return False
+            
+            logger.info(f"✅ تحقق الرصيد: ${required_margin:.2f} مطلوب | ${available_balance:.2f} متاح")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في التحقق من الرصيد: {e}")
+            return False
+
     def execute_trade(self, signal):
-        """تنفيذ الصفقة"""
+        """تنفيذ الصفقة مع الرصيد الحقيقي"""
         try:
             symbol = signal['symbol']
             direction = signal['direction']
             
-            # التحقق من إمكانية التداول
             can_trade, reasons = self.can_open_trade(symbol, direction)
             if not can_trade:
                 logger.info(f"⏭️ تخطي {symbol} {direction}: {', '.join(reasons)}")
@@ -893,20 +1054,17 @@ class AdvancedTradingBot:
             if not current_price:
                 return False
             
-            # حساب حجم المركز
-            quantity = self.calculate_position_size(symbol, direction, current_price)
+            quantity = self.calculate_safe_position_size(symbol, direction, current_price)
             if not quantity:
                 return False
             
-            # تعيين الرافعة
             leverage = self.TRADING_SETTINGS['max_leverage'] if direction == 'LONG' else 3
-            try:
-                self.client.futures_change_leverage(symbol=symbol, leverage=leverage)
-                self.client.futures_change_margin_type(symbol=symbol, marginType='ISOLATED')
-            except Exception as e:
-                logger.warning(f"⚠️ خطأ في تعيين الرافعة: {e}")
             
-            # تنفيذ الأمر
+            if not self.final_balance_check(symbol, quantity, current_price, leverage):
+                return False
+            
+            margin_set_success = self.set_margin_and_leverage(symbol, leverage)
+            
             side = 'BUY' if direction == 'LONG' else 'SELL'
             
             order = self.client.futures_create_order(
@@ -917,7 +1075,6 @@ class AdvancedTradingBot:
             )
             
             if order and order['orderId']:
-                # الحصول على سعر التنفيذ
                 executed_price = current_price
                 try:
                     order_info = self.client.futures_get_order(symbol=symbol, orderId=order['orderId'])
@@ -926,7 +1083,6 @@ class AdvancedTradingBot:
                 except:
                     pass
                 
-                # تسجيل الصفقة
                 trade_data = {
                     'symbol': symbol,
                     'quantity': quantity,
@@ -937,33 +1093,34 @@ class AdvancedTradingBot:
                     'status': 'open',
                     'order_id': order['orderId'],
                     'signal_confidence': signal['confidence'],
-                    'phase_analysis': signal['phase_analysis']
+                    'phase_analysis': signal['phase_analysis'],
+                    'margin_set_success': margin_set_success,
+                    'position_value': quantity * executed_price
                 }
                 
                 self.trade_manager.add_trade(symbol, trade_data)
                 self.performance_stats['trades_opened'] += 1
                 
-                # تحديث الرصيد
                 trade_cost = (quantity * executed_price) / leverage
                 self.symbol_balances[symbol] = max(0, self.symbol_balances[symbol] - trade_cost)
                 
-                # إرسال إشعار
                 if self.notifier:
-                    direction_emoji = "🟢" if direction == 'LONG' else "🔴"
+                    current_balance = self.real_time_balance['available_balance']
                     message = (
-                        f"{direction_emoji} <b>تم فتح صفقة جديدة</b>\n"
+                        f"{'🟢' if direction == 'LONG' else '🔴'} <b>تم فتح صفقة جديدة</b>\n"
                         f"العملة: {symbol}\n"
                         f"الاتجاه: {direction}\n"
-                        f"الكمية: {quantity:.4f}\n"
+                        f"الكمية: {quantity:.6f}\n"
                         f"السعر: ${executed_price:.4f}\n"
+                        f"القيمة: ${quantity * executed_price:.2f}\n"
                         f"الرافعة: {leverage}x\n"
+                        f"الرصيد المتاح: ${current_balance:.2f}\n"
                         f"الثقة: {signal['confidence']:.2%}\n"
-                        f"المرحلة: {signal['phase_analysis']['phase']}\n"
                         f"الوقت: {datetime.now(damascus_tz).strftime('%H:%M:%S')}"
                     )
                     self.notifier.send_message(message)
                 
-                logger.info(f"✅ تم فتح صفقة {direction} لـ {symbol}")
+                logger.info(f"✅ تم فتح صفقة {direction} لـ {symbol} بالرصيد الحقيقي")
                 return True
             
             return False
@@ -971,7 +1128,7 @@ class AdvancedTradingBot:
         except Exception as e:
             logger.error(f"❌ فشل تنفيذ صفقة {symbol}: {e}")
             return False
-    
+
     def close_trade(self, symbol, reason="إغلاق طبيعي"):
         """إغلاق الصفقة"""
         try:
@@ -983,7 +1140,6 @@ class AdvancedTradingBot:
             if not current_price:
                 return False
             
-            # تحديد اتجاه الإغلاق
             close_side = 'SELL' if trade['side'] == 'LONG' else 'BUY'
             quantity = trade['quantity']
             
@@ -996,25 +1152,21 @@ class AdvancedTradingBot:
             )
             
             if order and order['orderId']:
-                # حساب الربح/الخسارة
                 entry_price = trade['entry_price']
                 if trade['side'] == 'LONG':
                     pnl_percentage = (current_price - entry_price) / entry_price * 100
                 else:
                     pnl_percentage = (entry_price - current_price) / entry_price * 100
                 
-                # تحديث الإحصائيات
                 self.performance_stats['trades_closed'] += 1
                 if pnl_percentage > 0:
                     self.performance_stats['winning_trades'] += 1
                 else:
                     self.performance_stats['losing_trades'] += 1
                 
-                # استعادة الرصيد
                 trade_cost = (quantity * entry_price) / trade['leverage']
                 self.symbol_balances[symbol] += trade_cost
                 
-                # إرسال إشعار
                 if self.notifier:
                     pnl_emoji = "🟢" if pnl_percentage > 0 else "🔴"
                     message = (
@@ -1036,7 +1188,7 @@ class AdvancedTradingBot:
         except Exception as e:
             logger.error(f"❌ فشل إغلاق صفقة {symbol}: {e}")
             return False
-    
+
     def scan_market(self):
         """مسح السوق للعثور على فرص التداول"""
         logger.info("🔍 بدء مسح السوق...")
@@ -1045,11 +1197,9 @@ class AdvancedTradingBot:
         
         for symbol in self.TRADING_SETTINGS['symbols']:
             try:
-                # تخطي الرموز ذات الصفقات النشطة
                 if self.trade_manager.is_symbol_trading(symbol):
                     continue
                 
-                # جلب البيانات وتحليلها
                 data = self.get_historical_data(symbol, self.TRADING_SETTINGS['data_interval'])
                 if data is None or len(data) < 50:
                     continue
@@ -1058,12 +1208,10 @@ class AdvancedTradingBot:
                 if not current_price:
                     continue
                 
-                # توليد الإشارة
                 signal = self.signal_generator.generate_signal(symbol, data, current_price)
                 if signal and signal['confidence'] >= self.TRADING_SETTINGS['min_signal_confidence']:
                     opportunities.append(signal)
                     
-                    # إرسال إشعار بالإشارة
                     if self.notifier:
                         self.notifier.send_trade_alert(symbol, signal, current_price, signal['phase_analysis'])
                 
@@ -1071,31 +1219,33 @@ class AdvancedTradingBot:
                 logger.error(f"❌ خطأ في تحليل {symbol}: {e}")
                 continue
         
-        # ترتيب الفرص حسب الثقة
         opportunities.sort(key=lambda x: x['confidence'], reverse=True)
         
         logger.info(f"🎯 تم العثور على {len(opportunities)} فرصة تداول")
         return opportunities
-    
+
     def execute_trading_cycle(self):
         """تنفيذ دورة التداول الكاملة"""
         try:
-            # مسح السوق
             opportunities = self.scan_market()
             
-            # تنفيذ أفضل الفرص
-            for signal in opportunities[:2]:  # تنفيذ أفضل فرصتين فقط
+            executed_trades = 0
+            for signal in opportunities:
+                if executed_trades >= 2:
+                    break
+                
                 if self.trade_manager.get_active_trades_count() >= self.TRADING_SETTINGS['max_active_trades']:
                     break
                 
                 if self.execute_trade(signal):
-                    time.sleep(2)  # انتظار بين الصفقات
+                    executed_trades += 1
+                    time.sleep(2)
             
-            logger.info("✅ اكتملت دورة التداول")
+            logger.info(f"✅ اكتملت الدورة - تم تنفيذ {executed_trades} صفقة")
             
         except Exception as e:
             logger.error(f"❌ خطأ في دورة التداول: {e}")
-    
+
     def get_active_trades_details(self):
         """الحصول على تفاصيل الصفقات النشطة"""
         trades = self.trade_manager.get_all_trades()
@@ -1112,7 +1262,7 @@ class AdvancedTradingBot:
             }
             for trade in trades.values()
         ]
-    
+
     def get_market_analysis(self, symbol):
         """الحصول على تحليل السوق لرمز معين"""
         try:
@@ -1135,25 +1285,20 @@ class AdvancedTradingBot:
             
         except Exception as e:
             return {'error': str(e)}
-    
+
     def run(self):
         """تشغيل البوت الرئيسي"""
         logger.info("🚀 بدء تشغيل البوت المتقدم...")
         
-        # بدء خادم Flask
         flask_thread = threading.Thread(target=run_flask_app, daemon=True)
         flask_thread.start()
         
         try:
             while True:
                 try:
-                    # تشغيل المهام المجدولة
                     schedule.run_pending()
-                    
-                    # تنفيذ دورة التداول
                     self.execute_trading_cycle()
                     
-                    # انتظار حتى الدورة القادمة
                     wait_time = self.TRADING_SETTINGS['rescan_interval_minutes'] * 60
                     logger.info(f"⏳ انتظار {wait_time} ثانية للدورة القادمة...")
                     time.sleep(wait_time)
