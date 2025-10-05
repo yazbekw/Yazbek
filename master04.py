@@ -707,12 +707,12 @@ class AdvancedTradingBot:
         'max_active_trades': 4,
         'data_interval': '5m',
         'rescan_interval_minutes': 5,
-        'min_signal_confidence': 0.72,
+        'min_signal_confidence': 0.65,  # ⬅️ تخفيض من 0.72 إلى 0.65
         'short_trading_enabled': True,
         'max_short_trades': 2,
         'risk_per_trade': 0.20,
         'max_portfolio_risk': 0.50,
-        'max_trades_per_cycle': 1,
+        'max_trades_per_cycle': 2,  # ⬅️ زيادة من 1 إلى 2
     }
     
     @classmethod
@@ -767,13 +767,13 @@ class AdvancedTradingBot:
         self.send_startup_message()
         
         AdvancedTradingBot._instance = self
-        logger.info("✅ تم تهيئة البوت المتقدم بنجاح مع الرصيد الحقيقي")
+        logger.info("✅ تم تهيئة البوت المتقدم بنجاح مع الرصيد الحقيقي - الوضع السريع")
 
     def test_connection(self):
         """اختبار اتصال API"""
         try:
             self.client.futures_time()
-            logger.info("✅ اتصال Binance API نشط")
+            logger.info("✅ اتصال Binance API نشط - الوضع السريع")
             return True
         except Exception as e:
             logger.error(f"❌ فشل الاتصال بـ Binance API: {e}")
@@ -807,7 +807,7 @@ class AdvancedTradingBot:
                 'timestamp': datetime.now(damascus_tz)
             }
             
-            logger.info(f"💰 الرصيد الحقيقي: ${total_balance:.2f} | المتاح: ${available_balance:.2f}")
+            logger.info(f"💰 الرصيد الحقيقي: ${total_balance:.2f} | المتاح: ${available_balance:.2f} - الوضع السريع")
             return balance_info
             
         except Exception as e:
@@ -890,17 +890,19 @@ class AdvancedTradingBot:
             logger.error(f"❌ خطأ في إدارة خروج الصفقات: {e}")
 
     def send_startup_message(self):
-        """إرسال رسالة بدء التشغيل"""
+        """إرسال رسالة بدء التشغيل - معدلة للوضع السريع"""
         if self.notifier:
             balance = self.real_time_balance
             message = (
-                "🚀 <b>بدء تشغيل البوت المتقدم بالوضع السريع</b>\n"
+                "⚡ <b>بدء تشغيل البوت بالوضع السريع</b>\n"
+                f"الهدف: جني $1 سريع لكل صفقة\n"
                 f"المسح كل: {self.TRADING_SETTINGS['rescan_interval_minutes']} دقائق\n"
-                f"فترة البيانات: {self.TRADING_SETTINGS['data_interval']}\n"
+                f"الربح المستهدف: 1-2%\n"
+                f"المخاطرة: 1%\n"
+                f"الصفقات/دورة: {self.TRADING_SETTINGS['max_trades_per_cycle']}\n"
+                f"الحد الأدنى للثقة: {self.TRADING_SETTINGS['min_signal_confidence']:.0%}\n"
                 f"الرصيد الإجمالي: ${balance['total_balance']:.2f}\n"
                 f"الرصيد المتاح: ${balance['available_balance']:.2f}\n"
-                f"الأصول: {len(self.TRADING_SETTINGS['symbols'])}\n"
-                f"الصفقات/دورة: {self.TRADING_SETTINGS['max_trades_per_cycle']}\n"
                 f"الوقت: {datetime.now(damascus_tz).strftime('%Y-%m-%d %H:%M:%S')}"
             )
             self.notifier.send_message(message)
@@ -1018,7 +1020,7 @@ class AdvancedTradingBot:
         return len(reasons) == 0, reasons
 
     def calculate_safe_position_size(self, symbol, direction, current_price):
-        """حساب حجم آمن بناءً على الرصيد الحقيقي"""
+        """حساب حجم آمن بناءً على الرصيد الحقيقي - معدل للربح السريع"""
         try:
             self.update_real_time_balance()
             
@@ -1032,7 +1034,19 @@ class AdvancedTradingBot:
             
             leverage = self.TRADING_SETTINGS['max_leverage'] if direction == 'LONG' else 3
             
-            position_value = min(risk_amount * leverage, self.TRADING_SETTINGS['base_trade_size'] * leverage)
+            # 🎯 حساب حجم المركز لتحقيق ربح سريع $1
+            target_profit = 1.0  # $1 هدف الربح
+            if direction == 'LONG':
+                position_value_for_target = target_profit * leverage / 0.015  # افتراض ربح 1.5%
+            else:
+                position_value_for_target = target_profit * leverage / 0.015  # افتراض ربح 1.5%
+            
+            # استخدام الحد الأدنى بين الحسابات المختلفة
+            position_value = min(
+                risk_amount * leverage,
+                position_value_for_target,
+                self.TRADING_SETTINGS['base_trade_size'] * leverage
+            )
             
             total_risk = self.calculate_total_portfolio_risk()
             if total_risk + risk_amount > available_balance * self.TRADING_SETTINGS['max_portfolio_risk']:
@@ -1044,7 +1058,8 @@ class AdvancedTradingBot:
             quantity = self.adjust_quantity(symbol, quantity)
             
             if quantity and quantity > 0:
-                logger.info(f"💰 حجم الصفقة لـ {symbol}: {quantity:.6f} (قيمة: ${position_value:.2f})")
+                expected_profit = (position_value * 0.015) / leverage  # حساب الربح المتوقع
+                logger.info(f"💰 حجم الصفقة لـ {symbol}: {quantity:.6f} (قيمة: ${position_value:.2f}, ربح متوقع: ${expected_profit:.2f})")
                 return quantity
             
             return None
@@ -1126,58 +1141,47 @@ class AdvancedTradingBot:
             return False
 
     def calculate_stop_loss_take_profit(self, symbol, direction, entry_price, signal):
-        """حساب مستويات الوقف وجني الأرباح بناءً على التقلبات والإستراتيجية"""
+        """حساب مستويات الوقف وجني الأرباح للدخول والخروج السريع"""
         try:
-            # ✅ جلب البيانات التاريخية لحساب التقلبات
-            data = self.get_historical_data(symbol, '1h', 50)
-            if data is None:
-                # استخدام نسب ثابتة إذا فشل جلب البيانات
-                return self._calculate_fixed_stop_levels(direction, entry_price)
-            
-            # ✅ حساب ATR (Average True Range) للتقلبات
-            atr = self.calculate_atr(data)
-            if atr == 0:
-                atr = entry_price * 0.02  # قيمة افتراضية إذا كان ATR صفر
-            
-            # ✅ تحديد المستويات بناءً على اتجاه الصفقة
+            # 🎯 استهداف أرباح سريعة 1-1.5% مع وقف خسارة 0.8-1%
             if direction == 'LONG':
-                # 🟢 صفقات الشراء
-                stop_loss_distance = atr * 1.8  # وقف عند 1.8x ATR
-                take_profit_distance = atr * 3.2  # جني عند 3.2x ATP
+                take_profit_percentage = 0.015  # 1.5%
+                stop_loss_percentage = 0.010    # 1.0%
                 
-                stop_loss_price = entry_price - stop_loss_distance
-                take_profit_price = entry_price + take_profit_distance
-                
-                # ✅ ضمان مستويات واقعية
-                stop_loss_price = max(stop_loss_price, entry_price * 0.97)  # أقصى خسارة 3%
-                take_profit_price = min(take_profit_price, entry_price * 1.06)  # أقصى ربح 6%
-                
+                take_profit_price = entry_price * (1 + take_profit_percentage)
+                stop_loss_price = entry_price * (1 - stop_loss_percentage)
+                    
             else:
-                # 🔴 صفقات البيع
-                stop_loss_distance = atr * 1.8
-                take_profit_distance = atr * 3.2
+                take_profit_percentage = 0.015  # 1.5%
+                stop_loss_percentage = 0.010    # 1.0%
                 
-                stop_loss_price = entry_price + stop_loss_distance
-                take_profit_price = entry_price - take_profit_distance
-                
-                # ✅ ضمان مستويات واقعية
-                stop_loss_price = min(stop_loss_price, entry_price * 1.03)  # أقصى خسارة 3%
-                take_profit_price = max(take_profit_price, entry_price * 0.94)  # أقصى ربح 6%
+                take_profit_price = entry_price * (1 - take_profit_percentage)
+                stop_loss_price = entry_price * (1 + stop_loss_percentage)
             
-            # ✅ تعديل المستويات بناءً على ثقة الإشارة
+            # تعديل بناءً على ثقة الإشارة
             confidence = signal.get('confidence', 0.5)
-            if confidence > 0.75:
-                # زيادة جني الأرباح للإشارات عالية الثقة
+            if confidence > 0.7:
+                # زيادة طموحية للإشارات عالية الثقة
                 if direction == 'LONG':
-                    take_profit_price = min(take_profit_price * 1.1, entry_price * 1.08)
+                    take_profit_price = entry_price * 1.020  # 2%
                 else:
-                    take_profit_price = max(take_profit_price * 0.9, entry_price * 0.92)
+                    take_profit_price = entry_price * 0.980  # 2%
             
-            # ✅ تقريب الأسعار حسب متطلبات المنصة
+            # تقريب الأسعار حسب متطلبات المنصة
             stop_loss_price = self.adjust_price_to_tick_size(symbol, stop_loss_price)
             take_profit_price = self.adjust_price_to_tick_size(symbol, take_profit_price)
             
-            logger.info(f"📊 مستويات {symbol}: دخول ${entry_price:.4f} | وقف ${stop_loss_price:.4f} | جني ${take_profit_price:.4f}")
+            # حساب نسبة المكافأة
+            if direction == 'LONG':
+                risk = entry_price - stop_loss_price
+                reward = take_profit_price - entry_price
+            else:
+                risk = stop_loss_price - entry_price
+                reward = entry_price - take_profit_price
+            
+            reward_ratio = reward / risk if risk > 0 else 0
+            
+            logger.info(f"🎯 مستويات سريعة {symbol}: دخول ${entry_price:.4f} | وقف ${stop_loss_price:.4f} | جني ${take_profit_price:.4f} | نسبة {reward_ratio:.1f}:1")
             
             return stop_loss_price, take_profit_price
             
@@ -1186,15 +1190,15 @@ class AdvancedTradingBot:
             return self._calculate_fixed_stop_levels(direction, entry_price)
 
     def _calculate_fixed_stop_levels(self, direction, entry_price):
-        """حساب مستويات وقف ثابتة كبديل"""
+        """مستويات وقف ثابتة للدخول السريع"""
         if direction == 'LONG':
-            stop_loss_price = entry_price * 0.98  # وقف 2%
-            take_profit_price = entry_price * 1.04  # جني 4%
+            stop_loss_price = entry_price * 0.990  # وقف 1%
+            take_profit_price = entry_price * 1.015  # جني 1.5%
         else:
-            stop_loss_price = entry_price * 1.02  # وقف 2%
-            take_profit_price = entry_price * 0.96  # جني 4%
+            stop_loss_price = entry_price * 1.010  # وقف 1%
+            take_profit_price = entry_price * 0.985  # جني 1.5%
         
-        logger.info(f"📊 استخدام مستويات وقف ثابتة: وقف {stop_loss_price:.4f} | جني {take_profit_price:.4f}")
+        logger.info(f"⚡ استخدام مستويات وقف سريعة: وقف {stop_loss_price:.4f} | جني ${take_profit_price:.4f}")
         return stop_loss_price, take_profit_price
 
     def calculate_atr(self, data, period=14):
@@ -1327,7 +1331,7 @@ class AdvancedTradingBot:
             logger.error(f"❌ خطأ عام في مزامنة أوامر الوقف: {e}")
 
     def execute_trade(self, signal):
-        """تنفيذ الصفقة مع أوامر وقف خسارة وجني الأرباح"""
+        """تنفيذ الصفقة مع أوامر وقف خسارة وجني الأرباح - معدل للسرعة"""
         try:
             symbol = signal['symbol']
             direction = signal['direction']
@@ -1370,7 +1374,7 @@ class AdvancedTradingBot:
             # ✅ تنفيذ الأمر الرئيسي
             side = 'BUY' if direction == 'LONG' else 'SELL'
             
-            logger.info(f"🎯 تنفيذ صفقة {symbol}: {direction} | الكمية: {quantity:.6f} | السعر: ${current_price:.4f}")
+            logger.info(f"⚡ تنفيذ صفقة سريعة {symbol}: {direction} | الكمية: {quantity:.6f} | السعر: ${current_price:.4f}")
             
             order = self.client.futures_create_order(
                 symbol=symbol,
@@ -1401,10 +1405,10 @@ class AdvancedTradingBot:
                 
                 try:
                     stop_loss_order = self.place_stop_loss_order(symbol, direction, quantity, stop_loss_price)
-                    time.sleep(0.5)
+                    time.sleep(0.3)  # ⬅️ تقليل الانتظار
                     
                     take_profit_order = self.place_take_profit_order(symbol, direction, quantity, take_profit_price)
-                    time.sleep(0.5)
+                    time.sleep(0.3)  # ⬅️ تقليل الانتظار
                     
                 except Exception as e:
                     logger.error(f"❌ فشل وضع أوامر الوقف لـ {symbol}: {e}")
@@ -1415,6 +1419,13 @@ class AdvancedTradingBot:
                             take_profit_order = self.place_take_profit_order(symbol, direction, quantity, take_profit_price)
                     except Exception as retry_e:
                         logger.error(f"❌ فشل إعادة وضع أوامر الوقف لـ {symbol}: {retry_e}")
+                
+                # حساب الربح المتوقع
+                position_value = quantity * executed_price
+                if direction == 'LONG':
+                    expected_profit = (take_profit_price - executed_price) * quantity
+                else:
+                    expected_profit = (executed_price - take_profit_price) * quantity
                 
                 # ✅ تسجيل الصفقة
                 trade_data = {
@@ -1429,13 +1440,14 @@ class AdvancedTradingBot:
                     'signal_confidence': signal['confidence'],
                     'phase_analysis': signal['phase_analysis'],
                     'margin_set_success': margin_set_success,
-                    'position_value': quantity * executed_price,
+                    'position_value': position_value,
                     'stop_loss_price': stop_loss_price,
                     'take_profit_price': take_profit_price,
                     'stop_loss_order_id': stop_loss_order['orderId'] if stop_loss_order else None,
                     'take_profit_order_id': take_profit_order['orderId'] if take_profit_order else None,
                     'initial_risk': abs(executed_price - stop_loss_price) / executed_price * 100,
-                    'reward_ratio': abs(take_profit_price - executed_price) / abs(executed_price - stop_loss_price)
+                    'reward_ratio': abs(take_profit_price - executed_price) / abs(executed_price - stop_loss_price),
+                    'expected_profit': expected_profit  # ⬅️ إضافة الربح المتوقع
                 }
                 
                 self.trade_manager.add_trade(symbol, trade_data)
@@ -1452,15 +1464,16 @@ class AdvancedTradingBot:
                     risk_percentage = trade_data['initial_risk']
                     
                     message = (
-                        f"{'🟢' if direction == 'LONG' else '🔴'} <b>تم فتح صفقة جديدة</b>\n"
+                        f"{'🟢' if direction == 'LONG' else '🔴'} <b>صفقة سريعة - جني $1</b>\n"
                         f"العملة: {symbol}\n"
                         f"الاتجاه: {direction}\n"
                         f"الكمية: {quantity:.6f}\n"
                         f"سعر الدخول: ${executed_price:.4f}\n"
-                        f"القيمة: ${quantity * executed_price:.2f}\n"
+                        f"القيمة: ${position_value:.2f}\n"
                         f"الرافعة: {leverage}x\n"
                         f"🛡️ وقف الخسارة: ${stop_loss_price:.4f}\n"
                         f"🎯 جني الأرباح: ${take_profit_price:.4f}\n"
+                        f"💰 الربح المتوقع: ${expected_profit:.2f}\n"
                         f"📊 نسبة المخاطرة: {risk_percentage:.1f}%\n"
                         f"⚖️ نسبة المكافأة: {risk_reward_ratio:.1f}:1\n"
                         f"الرصيد المتاح: ${current_balance:.2f}\n"
@@ -1470,8 +1483,8 @@ class AdvancedTradingBot:
                     )
                     self.notifier.send_message(message)
                 
-                logger.info(f"✅ تم فتح صفقة {direction} لـ {symbol} بنجاح")
-                logger.info(f"📊 تفاصيل الصفقة: وقف ${stop_loss_price:.4f} | جني ${take_profit_price:.4f} | نسبة {risk_reward_ratio:.1f}:1")
+                logger.info(f"✅ تم فتح صفقة سريعة {direction} لـ {symbol}")
+                logger.info(f"💰 الربح المتوقع: ${expected_profit:.2f} | نسبة {risk_reward_ratio:.1f}:1")
                 
                 return True
             
@@ -1694,7 +1707,7 @@ class AdvancedTradingBot:
         except Exception as e:
             logger.error(f"❌ خطأ غير متوقع: {e}")
         finally:
-            logger.info("🛑 إيقاف البوت...")
+            logger.info("🛑 إوقف البوت...")
 
 def main():
     """الدالة الرئيسية"""
