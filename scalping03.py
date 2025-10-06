@@ -609,17 +609,17 @@ class ScalpingTradingBot:
     _instance = None
     
     TRADING_SETTINGS = {
-        'symbols': ["ETHUSDT", "LINKUSDT", "ADAUSDT", "SOLUSDT"],
+        'symbols': ["ETHUSDT", "LINKUSDT", "ADAUSDT", "SOLUSDT",'BNBUSDT","BTCUSDT"],
         'used_balance_per_trade': 6,
         'max_leverage': 4,
         'nominal_trade_size': 24,
-        'max_active_trades': 2,
+        'max_active_trades': 3,
         'data_interval': '3m',
         'rescan_interval_minutes': 2,
-        'min_signal_confidence': 0.75,  # ⬅️ زيادة من 0.70 إلى 0.75
+        'min_signal_confidence': 0.71,  # ⬅️ زيادة من 0.70 إلى 0.75
         'target_profit_pct': 0.25,     # ⬅️ زيادة من 0.15% إلى 0.25%
         'stop_loss_pct': 0.15,         # ⬅️ زيادة من 0.10% إلى 0.15%
-        'max_daily_trades': 25,        # ⬅️ تقليل من 30 إلى 25
+        'max_daily_trades': 30,        # ⬅️ تقليل من 30 إلى 25
         'cooldown_after_loss': 10,     # ⬅️ زيادة من 5 إلى 10 دقائق
         
         # إعدادات التوقيت الذكي المحسنة
