@@ -605,20 +605,20 @@ class ScalpingTradingBot:
         'used_balance_per_trade': 6,
         'max_leverage': 4,
         'nominal_trade_size': 24,
-        'max_active_trades': 2,
+        'max_active_trades': 4,
         'data_interval': '3m',
-        'max_daily_trades': 30,
+        'max_daily_trades': 40,
         'cooldown_after_loss': 5,
         
         # إعدادات الربح والخسارة
-        'target_profit_pct': 0.15,
-        'stop_loss_pct': 0.10,
+        'target_profit_pct': 0.13,
+        'stop_loss_pct': 0.08,
         
         # 🎯 إعدادات شروط الدخول المشددة - يمكن تعديلها بسهولة
         'signal_conditions': {
             # الحدود الدنيا
-            'min_confidence': 0.75,      # ⬆️ زيادة من 0.70 إلى 0.75
-            'min_conditions': 5,         # ⬆️ زيادة من 4 إلى 5 شروط
+            'min_confidence': 0.73,      # ⬆️ زيادة من 0.70 إلى 0.75
+            'min_conditions': 4,         # ⬆️ زيادة من 4 إلى 5 شروط
             
             # الأوزان النسبية للمؤشرات
             'weights': {
