@@ -224,8 +224,8 @@ class AdvancedScalpingSignalGenerator:
     """مولد إشارات السكالبينج المتقدم مع شروط مشددة"""
     
     def __init__(self):
-        self.min_confidence = 0.75  # ⬅️ زيادة من 0.70 إلى 0.75
-        self.min_conditions = 6     # ⬅️ اشتراط 6/6 شروط
+        self.min_confidence = 0.71  # ⬅️ زيادة من 0.70 إلى 0.75
+        self.min_conditions = 5     # ⬅️ اشتراط 6/6 شروط
     
     def generate_signal(self, symbol, data, current_price):
         """توليد إشارة سكالبينج متقدمة"""
@@ -609,8 +609,8 @@ class ScalpingTradingBot:
     _instance = None
     
     TRADING_SETTINGS = {
-        'symbols': ["ETHUSDT", "LINKUSDT", "ADAUSDT", "SOLUSDT",'BNBUSDT","BTCUSDT"],
-        'used_balance_per_trade': 6,
+        'symbols': ["ETHUSDT", "LINKUSDT", "ADAUSDT", "SOLUSDT","BNBUSDT","BTCUSDT"],
+        'used_balance_per_trade': 5,
         'max_leverage': 4,
         'nominal_trade_size': 24,
         'max_active_trades': 3,
