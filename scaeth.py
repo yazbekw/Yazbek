@@ -13,7 +13,6 @@ import threading
 import schedule
 from flask import Flask, jsonify
 import pytz
-from scipy.signal import find_peaks
 from dotenv import load_dotenv
 
 warnings.filterwarnings('ignore')
@@ -30,7 +29,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return {'status': 'healthy', 'service': 'scalping-trading-bot', 'timestamp': datetime.now(damascus_tz).isoformat()}
+    return {'status': 'healthy', 'service': 'eth-scalping-bot', 'timestamp': datetime.now(damascus_tz).isoformat()}
 
 @app.route('/active_trades')
 def active_trades():
@@ -42,23 +41,13 @@ def active_trades():
     except Exception as e:
         return {'error': str(e)}
 
-@app.route('/market_analysis/<symbol>')
-def market_analysis(symbol):
+@app.route('/market_analysis')
+def market_analysis():
     try:
         bot = ScalpingTradingBot.get_instance()
         if bot:
-            analysis = bot.get_market_analysis(symbol)
+            analysis = bot.get_market_analysis()
             return jsonify(analysis)
-        return {'error': 'Bot not initialized'}
-    except Exception as e:
-        return {'error': str(e)}
-
-@app.route('/trading_session')
-def trading_session():
-    try:
-        bot = ScalpingTradingBot.get_instance()
-        if bot:
-            return jsonify(bot.get_current_session_info())
         return {'error': 'Bot not initialized'}
     except Exception as e:
         return {'error': str(e)}
@@ -82,152 +71,20 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('scalping_bot.log', encoding='utf-8'),
+        logging.FileHandler('eth_scalping_bot.log', encoding='utf-8'),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
 
-class TradingSessionManager:
-    """مدير جلسات التداول بناءً على السيولة العالمية مع مراعاة توقيت دمشق"""
-    
-    def __init__(self):
-        self.utc_offset = 3  # توقيت دمشق UTC+3
-        
-        self.sessions = {
-            'asian': {
-                'name': 'الجلسة الآسيوية',
-                'start_hour_utc': 0,
-                'end_hour_utc': 7,
-                'symbols_focus': ['BNBUSDT', 'ADAUSDT'],  # تركيز على BNB في الجلسة الآسيوية
-                'active': False,
-                'performance_multiplier': 0.6,
-                'max_trades_per_hour': 2
-            },
-            'euro_american_overlap': {
-                'name': 'تداخل أوروبا-أمريكا (الأفضل)',
-                'start_hour_utc': 13,
-                'end_hour_utc': 17,
-                'symbols_focus': ['ETHUSDT', 'BTCUSDT', 'BNBUSDT'],
-                'active': False,
-                'performance_multiplier': 1.0,
-                'max_trades_per_hour': 4
-            },
-            'american': {
-                'name': 'الجلسة الأمريكية',
-                'start_hour_utc': 13,
-                'end_hour_utc': 21,
-                'symbols_focus': ['ETHUSDT', 'BTCUSDT', 'BNBUSDT'],
-                'active': False,
-                'performance_multiplier': 0.8,
-                'max_trades_per_hour': 3
-            },
-            'low_liquidity': {
-                'name': 'فترات سيولة منخفضة',
-                'start_hour_utc': 21,
-                'end_hour_utc': 0,
-                'symbols_focus': [],
-                'active': False,
-                'performance_multiplier': 0.0,
-                'max_trades_per_hour': 0
-            }
-        }
-    
-    def get_current_utc_time(self):
-        """الحصول على الوقت UTC الحالي"""
-        return datetime.utcnow()
-    
-    def get_damascus_time(self):
-        """الحصول على توقيت دمشق الحالي"""
-        return datetime.now(damascus_tz)
-    
-    def get_current_session(self):
-        """الحصول على الجلسة الحالية بناءً على UTC"""
-        current_utc = self.get_current_utc_time()
-        current_hour_utc = current_utc.hour
-        
-        # إعادة تعيين حالة الجلسات
-        for session in self.sessions.values():
-            session['active'] = False
-        
-        for session_name, session_data in self.sessions.items():
-            if session_name == 'low_liquidity':
-                if current_hour_utc >= session_data['start_hour_utc'] or current_hour_utc < session_data['end_hour_utc']:
-                    session_data['active'] = True
-                    self._log_session_info(session_name, session_data, current_utc)
-                    return session_data
-            else:
-                if session_data['start_hour_utc'] <= current_hour_utc < session_data['end_hour_utc']:
-                    session_data['active'] = True
-                    self._log_session_info(session_name, session_data, current_utc)
-                    return session_data
-        
-        self.sessions['asian']['active'] = True
-        self._log_session_info('asian', self.sessions['asian'], current_utc)
-        return self.sessions['asian']
-    
-    def _log_session_info(self, session_name, session_data, utc_time):
-        """تسجيل معلومات الجلسة"""
-        start_damascus = (utc_time.replace(hour=session_data['start_hour_utc'], minute=0) + 
-                         timedelta(hours=self.utc_offset)).strftime('%H:%M')
-        end_damascus = (utc_time.replace(hour=session_data['end_hour_utc'], minute=0) + 
-                       timedelta(hours=self.utc_offset)).strftime('%H:%M')
-        
-        logger.info(f"🌍 الجلسة: {session_data['name']} | دمشق {start_damascus}-{end_damascus}")
-    
-    def should_trade_symbol(self, symbol, current_session):
-        """التحقق إذا كان يجب التداول على الرمز في الجلسة الحالية"""
-        if not current_session['symbols_focus']:
-            return False
-        return symbol in current_session['symbols_focus']
-    
-    def get_session_performance_multiplier(self, session_name):
-        """مضاعف الأداء بناءً على الجلسة"""
-        return self.sessions.get(session_name, {}).get('performance_multiplier', 0.6)
-    
-    def get_trading_intensity(self, session_name):
-        """شدة التداول بناءً على الجلسة"""
-        intensity = {
-            'euro_american_overlap': 'عالية',
-            'american': 'متوسطة', 
-            'asian': 'منخفضة',
-            'low_liquidity': 'معدومة'
-        }
-        return intensity.get(session_name, 'منخفضة')
-    
-    def get_max_trades_per_hour(self, session_name):
-        """الحد الأقصى للصفقات في الساعة"""
-        return self.sessions.get(session_name, {}).get('max_trades_per_hour', 2)
-    
-    def get_session_schedule(self):
-        """الحصول على جدول الجلسات بتوقيت دمشق"""
-        schedule_info = {}
-        current_utc = self.get_current_utc_time()
-        
-        for session_name, session_data in self.sessions.items():
-            start_damascus = (current_utc.replace(hour=session_data['start_hour_utc'], minute=0) + 
-                             timedelta(hours=self.utc_offset)).strftime('%H:%M')
-            end_damascus = (current_utc.replace(hour=session_data['end_hour_utc'], minute=0) + 
-                           timedelta(hours=self.utc_offset)).strftime('%H:%M')
-            
-            schedule_info[session_name] = {
-                'name': session_data['name'],
-                'time_damascus': f"{start_damascus} - {end_damascus}",
-                'performance_multiplier': session_data['performance_multiplier'],
-                'intensity': self.get_trading_intensity(session_name),
-                'max_trades_per_hour': session_data['max_trades_per_hour']
-            }
-        
-        return schedule_info
-
-class MA_RSI_ScalpingSignalGenerator:
+class MA_RSI_SignalGenerator:
     """مولد إشارات السكالبينج باستراتيجية المتوسطات المتحركة + RSI"""
     
     def __init__(self):
         self.min_confidence = 0.75
-        self.min_conditions = 4  # 4 من أصل 5 شروط
+        self.min_conditions = 4  # 4 من أصل 6 شروط
     
-    def generate_signal(self, symbol, data, current_price):
+    def generate_signal(self, data, current_price):
         """توليد إشارة سكالبينج باستراتيجية EMA + RSI"""
         try:
             if len(data) < 50:
@@ -241,10 +98,10 @@ class MA_RSI_ScalpingSignalGenerator:
             short_signal = self._analyze_short_signal(indicators)
             
             # اختيار أفضل إشارة
-            return self._select_best_signal(symbol, long_signal, short_signal, indicators)
+            return self._select_best_signal(long_signal, short_signal, indicators)
             
         except Exception as e:
-            logger.error(f"❌ خطأ في توليد الإشارة لـ {symbol}: {e}")
+            logger.error(f"❌ خطأ في توليد الإشارة: {e}")
             return None
     
     def _calculate_ma_rsi_indicators(self, data, current_price):
@@ -264,10 +121,7 @@ class MA_RSI_ScalpingSignalGenerator:
         df['ema9_slope'] = df['ema9'].diff(3) / df['ema9'].shift(3) * 100
         df['ema21_slope'] = df['ema21'].diff(3) / df['ema21'].shift(3) * 100
         
-        # 4. تقلبات السعر
-        df['volatility'] = df['close'].pct_change().rolling(10).std() * 100
-        
-        # 5. مؤشر الحجم
+        # 4. مؤشر الحجم
         df['volume_sma'] = df['volume'].rolling(20).mean()
         df['volume_ratio'] = df['volume'] / df['volume_sma']
         
@@ -282,7 +136,6 @@ class MA_RSI_ScalpingSignalGenerator:
             'rsi9': latest['rsi9'],
             'ema9_slope': latest['ema9_slope'],
             'ema21_slope': latest['ema21_slope'],
-            'volatility': latest['volatility'],
             'volume_ratio': latest['volume_ratio'],
             'current_price': current_price,
             'prev_close': prev['close'],
@@ -323,7 +176,7 @@ class MA_RSI_ScalpingSignalGenerator:
         conditions.append(30 < indicators['rsi9'] < 70)  # RSI قصير في نطاق معقول
         
         # 4. زخم المتوسطات
-        conditions.append(indicators['ema9_slope'] > 0.05)  # اتجاه صاعد
+        conditions.append(indicators['ema9_slope'] > 0.05)
         conditions.append(indicators['ema21_slope'] > 0.02)
         
         # 5. تأكيد الحجم
@@ -356,7 +209,7 @@ class MA_RSI_ScalpingSignalGenerator:
         conditions.append(30 < indicators['rsi9'] < 70)  # RSI قصير في نطاق معقول
         
         # 4. زخم المتوسطات
-        conditions.append(indicators['ema9_slope'] < -0.05)  # اتجاه هابط
+        conditions.append(indicators['ema9_slope'] < -0.05)
         conditions.append(indicators['ema21_slope'] < -0.02)
         
         # 5. تأكيد الحجم
@@ -372,7 +225,7 @@ class MA_RSI_ScalpingSignalGenerator:
             'strategy': 'EMA_RSI'
         }
     
-    def _select_best_signal(self, symbol, long_signal, short_signal, indicators):
+    def _select_best_signal(self, long_signal, short_signal, indicators):
         """اختيار أفضل إشارة"""
         signals = []
         
@@ -392,7 +245,7 @@ class MA_RSI_ScalpingSignalGenerator:
         best_signal = max(signals, key=lambda x: x['confidence'])
         
         signal_info = {
-            'symbol': symbol,
+            'symbol': 'ETHUSDT',
             'direction': best_signal['direction'],
             'confidence': best_signal['confidence'],
             'conditions_met': best_signal['conditions_met'],
@@ -402,22 +255,21 @@ class MA_RSI_ScalpingSignalGenerator:
             'strategy': best_signal.get('strategy', 'EMA_RSI')
         }
         
-        logger.info(f"🎯 إشارة EMA+RSI {symbol}: {best_signal['direction']} "
+        logger.info(f"🎯 إشارة EMA+RSI ETH: {best_signal['direction']} "
                    f"(ثقة: {best_signal['confidence']:.2%}, "
                    f"شروط: {best_signal['conditions_met']}/{best_signal['total_conditions']})")
         
         return signal_info
 
 class TradeManager:
-    """مدير الصفقات مع تحسينات التبريد"""
+    """مدير الصفقات"""
     
     def __init__(self, client, notifier):
         self.client = client
         self.notifier = notifier
         self.active_trades = {}
         self.trade_history = []
-        self.symbol_cooldown = {}  # نظام التبريد للرموز
-        self.session_cooldown = {} # نظام التبريد للجلسات
+        self.symbol_cooldown = {}
     
     def sync_with_exchange(self):
         """مزامنة الصفقات مع المنصة"""
@@ -425,15 +277,11 @@ class TradeManager:
             account_info = self.client.futures_account()
             positions = account_info['positions']
             
-            active_symbols = set()
-            
             for position in positions:
                 symbol = position['symbol']
                 quantity = float(position['positionAmt'])
                 
-                if quantity != 0:
-                    active_symbols.add(symbol)
-                    
+                if quantity != 0 and symbol == 'ETHUSDT':
                     if symbol not in self.active_trades:
                         side = "LONG" if quantity > 0 else "SHORT"
                         self.active_trades[symbol] = {
@@ -444,10 +292,7 @@ class TradeManager:
                             'timestamp': datetime.now(damascus_tz),
                             'status': 'open'
                         }
-            
-            closed_symbols = set(self.active_trades.keys()) - active_symbols
-            for symbol in closed_symbols:
-                if symbol in self.active_trades:
+                elif symbol == 'ETHUSDT' and symbol in self.active_trades:
                     closed_trade = self.active_trades[symbol]
                     closed_trade['status'] = 'closed'
                     closed_trade['close_time'] = datetime.now(damascus_tz)
@@ -460,9 +305,8 @@ class TradeManager:
             logger.error(f"❌ خطأ في مزامنة الصفقات: {e}")
             return False
     
-    def can_trade_symbol(self, symbol, session_name):
-        """التحقق من إمكانية التداول على الرمز مع نظام التبريد"""
-        # التحقق من التبريد بعد خسائر متتالية على نفس الرمز
+    def can_trade_symbol(self, symbol):
+        """التحقق من إمكانية التداول على الرمز"""
         if symbol in self.symbol_cooldown:
             cooldown_end = self.symbol_cooldown[symbol]
             if datetime.now(damascus_tz) < cooldown_end:
@@ -494,29 +338,18 @@ class TradeManager:
     def is_symbol_trading(self, symbol):
         return symbol in self.active_trades
     
-    def add_trade(self, symbol, trade_data):
-        self.active_trades[symbol] = trade_data
+    def add_trade(self, trade_data):
+        self.active_trades['ETHUSDT'] = trade_data
     
-    def remove_trade(self, symbol):
-        if symbol in self.active_trades:
-            del self.active_trades[symbol]
+    def remove_trade(self):
+        if 'ETHUSDT' in self.active_trades:
+            del self.active_trades['ETHUSDT']
     
-    def get_trade(self, symbol):
-        return self.active_trades.get(symbol)
+    def get_trade(self):
+        return self.active_trades.get('ETHUSDT')
     
     def get_all_trades(self):
         return self.active_trades.copy()
-    
-    def get_recent_trades_count(self, symbol, minutes=60):
-        """عدد الصفقات الحديثة على الرمز"""
-        count = 0
-        current_time = datetime.now(damascus_tz)
-        for trade in list(self.active_trades.values()) + self.trade_history:
-            if trade['symbol'] == symbol:
-                trade_time = trade.get('close_time', trade['timestamp'])
-                if (current_time - trade_time).total_seconds() <= minutes * 60:
-                    count += 1
-        return count
 
 class TelegramNotifier:
     """مدير إشعارات التلغرام"""
@@ -541,73 +374,29 @@ class TelegramNotifier:
                 'disable_web_page_preview': True
             }
             
-            response = requests.post(f"{self.base_url}/sendMessage", json=payload, timeout=15)
+            response = requests.post(f"{self.base_url}/sendMessage", json=payload, timeout=10)
             return response.status_code == 200
                 
         except Exception as e:
             logger.error(f"❌ خطأ في إرسال رسالة تلغرام: {e}")
             return False
-    
-    def send_trade_alert(self, symbol, signal, current_price):
-        """إرسال إشعار صفقة سكالبينج"""
-        direction_emoji = "🟢" if signal['direction'] == 'LONG' else "🔴"
-        strategy_indicator = " 📈" if signal.get('strategy') == 'EMA_RSI' else ""
-        
-        message = (
-            f"{direction_emoji} <b>إشارة سكالبينج EMA+RSI{strategy_indicator}</b>\n"
-            f"العملة: {symbol}\n"
-            f"الاتجاه: {signal['direction']}\n"
-            f"السعر: ${current_price:.4f}\n"
-            f"الثقة: {signal['confidence']:.2%}\n"
-            f"الشروط: {signal['conditions_met']}/{signal['total_conditions']}\n"
-            f"الوقت: {datetime.now(damascus_tz).strftime('%H:%M:%S')}"
-        )
-        return self.send_message(message, 'trade_signal')
 
 class ScalpingTradingBot:
     _instance = None
     
     TRADING_SETTINGS = {
-        'symbols': ["ETHUSDT"],  # تركيز على العملات الرئيسية للاستراتيجية
+        'symbol': "ETHUSDT",  # ETH فقط
         'used_balance_per_trade': 5,
-        'max_leverage': 5,  # زيادة الرافعة إلى 5x حسب طلبك
-        'nominal_trade_size': 25,  # تحديث القيمة الاسمية
-        'max_active_trades': 1,  # صفقة واحدة مفتوحة فقط
-        'data_interval': '5m',  # تغيير إلى 5 دقائق لاستراتيجية EMA+RSI
-        'rescan_interval_minutes': 3,  # فحص كل 3 دقائق
+        'max_leverage': 5,
+        'nominal_trade_size': 25,
+        'max_active_trades': 1,  # صفقة واحدة فقط
+        'data_interval': '5m',   # 5 دقائق لاستراتيجية EMA+RSI
+        'rescan_interval_minutes': 3,
         'min_signal_confidence': 0.75,
-        'target_profit_pct': 0.30,  # زيادة هدف الربح
-        'stop_loss_pct': 0.20,     # زيادة وقف الخسارة
-        'max_daily_trades': 25,
-        'cooldown_after_loss': 15,  # زيادة فترة التبريد
-        
-        # إعدادات التوقيت الذكي المحسنة
-        'session_settings': {
-            'euro_american_overlap': {
-                'rescan_interval': 2,
-                'max_trades_per_cycle': 1,
-                'confidence_boost': 0.05,
-                'max_trades_per_symbol_per_hour': 2
-            },
-            'american': {
-                'rescan_interval': 3,
-                'max_trades_per_cycle': 1,
-                'confidence_boost': 0.03,
-                'max_trades_per_symbol_per_hour': 2
-            },
-            'asian': {
-                'rescan_interval': 5,
-                'max_trades_per_cycle': 1,
-                'confidence_boost': 0.08,
-                'max_trades_per_symbol_per_hour': 1
-            },
-            'low_liquidity': {
-                'rescan_interval': 10,
-                'max_trades_per_cycle': 0,
-                'confidence_boost': 0.0,
-                'max_trades_per_symbol_per_hour': 0
-            }
-        }
+        'target_profit_pct': 0.30,
+        'stop_loss_pct': 0.20,
+        'max_daily_trades': 20,
+        'cooldown_after_loss': 15,
     }
     
     @classmethod
@@ -635,23 +424,12 @@ class ScalpingTradingBot:
             logger.error(f"❌ فشل تهيئة العميل: {e}")
             raise
 
-        # تهيئة مكونات السكالبينج باستراتيجية EMA+RSI
-        self.signal_generator = MA_RSI_ScalpingSignalGenerator()  # استخدام مولد إشارات EMA+RSI
+        # تهيئة مكونات السكالبينج
+        self.signal_generator = MA_RSI_SignalGenerator()
         self.notifier = TelegramNotifier(self.telegram_token, self.telegram_chat_id)
         self.trade_manager = TradeManager(self.client, self.notifier)
-        self.session_manager = TradingSessionManager()
         
-        # الإعدادات الديناميكية
-        self.dynamic_settings = {
-            'rescan_interval': self.TRADING_SETTINGS['rescan_interval_minutes'],
-            'max_trades_per_cycle': 1,  # صفقة واحدة فقط
-            'confidence_boost': 0.0,
-            'session_name': 'غير محدد',
-            'trading_intensity': 'متوسطة',
-            'max_trades_per_symbol_per_hour': 2
-        }
-        
-        # إحصائيات الأداء المحسنة
+        # إحصائيات الأداء
         self.performance_stats = {
             'trades_opened': 0,
             'trades_closed': 0,
@@ -662,22 +440,17 @@ class ScalpingTradingBot:
             'last_trade_time': None,
             'consecutive_losses': 0,
             'consecutive_wins': 0,
-            'session_performance': {},
-            'symbol_performance': {},
-            'hourly_trade_count': 0,
-            'last_hour_reset': datetime.now(damascus_tz)
         }
         
         # المزامنة الأولية
         self.trade_manager.sync_with_exchange()
-        self.adjust_settings_for_session()
         
         # بدء الخدمات
         self.start_services()
         self.send_startup_message()
         
         ScalpingTradingBot._instance = self
-        logger.info("✅ تم تهيئة بوت السكالبينج باستراتيجية EMA+RSI بنجاح")
+        logger.info("✅ تم تهيئة بوت ETH السكالبينج باستراتيجية EMA+RSI بنجاح")
 
     def test_connection(self):
         """اختبار اتصال API"""
@@ -690,10 +463,9 @@ class ScalpingTradingBot:
             raise
 
     def get_real_time_balance(self):
-        """جلب الرصيد الحقيقي من منصة Binance"""
+        """جلب الرصيد الحقيقي"""
         try:
             account_info = self.client.futures_account()
-            
             total_balance = float(account_info['totalWalletBalance'])
             available_balance = float(account_info['availableBalance'])
             
@@ -707,79 +479,34 @@ class ScalpingTradingBot:
             return balance_info
             
         except Exception as e:
-            logger.error(f"❌ فشل جلب الرصيد الحقيقي: {e}")
+            logger.error(f"❌ فشل جلب الرصيد: {e}")
             return {
                 'total_balance': 100.0,
                 'available_balance': 100.0,
                 'timestamp': datetime.now(damascus_tz)
             }
 
-    def adjust_settings_for_session(self):
-        """ضبط إعدادات التداول بناءً على الجلسة الحالية"""
-        current_session = self.session_manager.get_current_session()
-        session_name = [k for k, v in self.session_manager.sessions.items() if v['active']][0]
-        
-        session_config = self.TRADING_SETTINGS['session_settings'].get(session_name, {})
-        
-        # تحديث الإعدادات الديناميكية
-        self.dynamic_settings = {
-            'rescan_interval': session_config.get('rescan_interval', 5),
-            'max_trades_per_cycle': session_config.get('max_trades_per_cycle', 1),
-            'confidence_boost': session_config.get('confidence_boost', 0.0),
-            'session_name': current_session['name'],
-            'trading_intensity': self.session_manager.get_trading_intensity(session_name),
-            'max_trades_per_symbol_per_hour': session_config.get('max_trades_per_symbol_per_hour', 2)
-        }
-        
-        logger.info(f"🎯 جلسة التداول: {current_session['name']} - شدة: {self.dynamic_settings['trading_intensity']}")
-
-    def should_skip_trading(self):
-        """التحقق إذا كان يجب تخطي التداول في الجلسة الحالية"""
-        current_session = self.session_manager.get_current_session()
-        session_name = [k for k, v in self.session_manager.sessions.items() if v['active']][0]
-        
-        # لا تداول في فترات السيولة المنخفضة
-        if session_name == 'low_liquidity':
-            logger.info("⏸️ تخطي التداول - فترة سيولة منخفضة")
-            return True
-            
-        return False
-
-    def get_session_enhanced_confidence(self, original_confidence):
-        """تعزيز ثقة الإشارة بناءً على الجلسة"""
-        boosted_confidence = original_confidence + self.dynamic_settings['confidence_boost']
-        return min(boosted_confidence, 0.95)
-
-    def can_open_trade(self, symbol, direction):
-        """التحقق من إمكانية فتح صفقة سكالبينج مع القيود المحسنة"""
+    def can_open_trade(self, direction):
+        """التحقق من إمكانية فتح صفقة"""
         reasons = []
         
-        # التحقق من الحد الأقصى للصفقات النشطة (صفقة واحدة فقط)
+        # التحقق من وجود صفقة نشطة
         if self.trade_manager.get_active_trades_count() >= self.TRADING_SETTINGS['max_active_trades']:
             reasons.append("يوجد صفقة نشطة بالفعل")
-        
-        # التحقق من وجود صفقة نشطة على الرمز
-        if self.trade_manager.is_symbol_trading(symbol):
-            reasons.append("صفقة نشطة على الرمز")
         
         # التحقق من الرصيد المتاح
         available_balance = self.real_time_balance['available_balance']
         if available_balance < self.TRADING_SETTINGS['used_balance_per_trade']:
             reasons.append("رصيد غير كافي")
         
-        # التحقق من الحد اليومي للصفقات
+        # التحقق من الحد اليومي
         if self.performance_stats['daily_trades_count'] >= self.TRADING_SETTINGS['max_daily_trades']:
             reasons.append("الحد اليومي للصفقات")
         
-        # التحقق من نظام التبريد للرمز
-        can_trade_symbol, cooldown_reason = self.trade_manager.can_trade_symbol(symbol, self.dynamic_settings['session_name'])
-        if not can_trade_symbol:
+        # التحقق من نظام التبريد
+        can_trade, cooldown_reason = self.trade_manager.can_trade_symbol('ETHUSDT')
+        if not can_trade:
             reasons.append(cooldown_reason)
-        
-        # التحقق من الحد الأقصى للصفقات على الرمز في الساعة
-        recent_trades = self.trade_manager.get_recent_trades_count(symbol, 60)
-        if recent_trades >= self.dynamic_settings['max_trades_per_symbol_per_hour']:
-            reasons.append(f"الحد الأقصى للصفقات على الرمز في الساعة ({recent_trades}/{self.dynamic_settings['max_trades_per_symbol_per_hour']})")
         
         # التحقق من الخسائر المتتالية
         if self.performance_stats['consecutive_losses'] >= 2:
@@ -798,7 +525,6 @@ class ScalpingTradingBot:
                     self.update_real_time_balance()
                     self.manage_active_trades()
                     self.trade_manager.cleanup_cooldowns()
-                    self.reset_hourly_count()
                     time.sleep(30)
                 except Exception as e:
                     logger.error(f"❌ خطأ في المزامنة: {e}")
@@ -809,17 +535,6 @@ class ScalpingTradingBot:
         if self.notifier:
             schedule.every(6).hours.do(self.send_performance_report)
             schedule.every(2).hours.do(self.send_balance_report)
-            schedule.every(1).hours.do(self.send_heartbeat)
-            schedule.every(4).hours.do(self.send_session_report)
-            schedule.every().day.at("16:00").do(self.send_session_report)
-
-    def reset_hourly_count(self):
-        """إعادة تعيين عدد الصفقات الساعي"""
-        current_time = datetime.now(damascus_tz)
-        if current_time.hour != self.performance_stats['last_hour_reset'].hour:
-            self.performance_stats['hourly_trade_count'] = 0
-            self.performance_stats['last_hour_reset'] = current_time
-            logger.info("🔄 إعادة تعيين العداد الساعي للصفقات")
 
     def update_real_time_balance(self):
         """تحديث الرصيد الحقيقي"""
@@ -831,18 +546,18 @@ class ScalpingTradingBot:
             return False
 
     def manage_active_trades(self):
-        """إدارة الصفقات النشطة للسكالبينج"""
+        """إدارة الصفقات النشطة"""
         try:
             active_trades = self.trade_manager.get_all_trades()
             for symbol, trade in active_trades.items():
-                self.check_trade_exit(symbol, trade)
+                self.check_trade_exit(trade)
         except Exception as e:
             logger.error(f"❌ خطأ في إدارة الصفقات: {e}")
 
-    def check_trade_exit(self, symbol, trade):
-        """التحقق من خروج الصفقة للسكالبينج"""
+    def check_trade_exit(self, trade):
+        """التحقق من خروج الصفقة"""
         try:
-            current_price = self.get_current_price(symbol)
+            current_price = self.get_current_price()
             if not current_price:
                 return
             
@@ -850,40 +565,31 @@ class ScalpingTradingBot:
             
             if trade['side'] == 'LONG':
                 pnl_pct = (current_price - entry_price) / entry_price * 100
-                # تحقيق الربح المستهدف
                 if pnl_pct >= self.TRADING_SETTINGS['target_profit_pct']:
-                    self.close_trade(symbol, f"تحقيق هدف الربح {pnl_pct:.2f}%")
+                    self.close_trade(f"تحقيق هدف الربح {pnl_pct:.2f}%")
                     return
-                # وقف الخسارة
                 if pnl_pct <= -self.TRADING_SETTINGS['stop_loss_pct']:
-                    self.close_trade(symbol, f"وقف الخسارة {pnl_pct:.2f}%")
+                    self.close_trade(f"وقف الخسارة {pnl_pct:.2f}%")
                     return
             else:
                 pnl_pct = (entry_price - current_price) / entry_price * 100
-                # تحقيق الربح المستهدف
                 if pnl_pct >= self.TRADING_SETTINGS['target_profit_pct']:
-                    self.close_trade(symbol, f"تحقيق هدف الربح {pnl_pct:.2f}%")
+                    self.close_trade(f"تحقيق هدف الربح {pnl_pct:.2f}%")
                     return
-                # وقف الخسارة
                 if pnl_pct <= -self.TRADING_SETTINGS['stop_loss_pct']:
-                    self.close_trade(symbol, f"وقف الخسارة {pnl_pct:.2f}%")
+                    self.close_trade(f"وقف الخسارة {pnl_pct:.2f}%")
                     return
                     
         except Exception as e:
-            logger.error(f"❌ خطأ في التحقق من خروج الصفقة {symbol}: {e}")
+            logger.error(f"❌ خطأ في التحقق من خروج الصفقة: {e}")
 
     def send_startup_message(self):
         """إرسال رسالة بدء التشغيل"""
         if self.notifier:
             balance = self.real_time_balance
-            session_schedule = self.session_manager.get_session_schedule()
-            
-            schedule_text = ""
-            for session, info in session_schedule.items():
-                schedule_text += f"\n• {info['name']}: {info['time_damascus']} ({info['intensity']})"
             
             message = (
-                "⚡ <b>بدء تشغيل بوت السكالبينج باستراتيجية EMA+RSI</b>\n"
+                "⚡ <b>بدء تشغيل بوت ETH السكالبينج</b>\n"
                 f"<b>الاستراتيجية:</b> المتوسطات المتحركة + RSI\n"
                 f"<b>المؤشرات:</b> EMA 9/21/50 + RSI 9/14\n"
                 f"<b>الإعدادات:</b>\n"
@@ -892,7 +598,6 @@ class ScalpingTradingBot:
                 f"• الرافعة: {self.TRADING_SETTINGS['max_leverage']}x\n"
                 f"• القيمة الاسمية: ${self.TRADING_SETTINGS['nominal_trade_size']}\n"
                 f"• صفقات نشطة: {self.TRADING_SETTINGS['max_active_trades']}\n"
-                f"<b>جدول الجلسات (توقيت دمشق):</b>{schedule_text}\n"
                 f"الرصيد الإجمالي: ${balance['total_balance']:.2f}\n"
                 f"الوقت دمشق: {datetime.now(damascus_tz).strftime('%Y-%m-%d %H:%M:%S')}"
             )
@@ -908,13 +613,11 @@ class ScalpingTradingBot:
         if self.performance_stats['trades_closed'] > 0:
             win_rate = (self.performance_stats['winning_trades'] / self.performance_stats['trades_closed']) * 100
         
-        # حساب نسبة المكافأة/المخاطرة
         risk_reward_ratio = self.TRADING_SETTINGS['target_profit_pct'] / self.TRADING_SETTINGS['stop_loss_pct']
         
         message = (
-            f"📊 <b>تقرير أداء السكالبينج EMA+RSI</b>\n"
-            f"الاستراتيجية: المتوسطات المتحركة + RSI\n"
-            f"الجلسة: {self.dynamic_settings['session_name']}\n"
+            f"📊 <b>تقرير أداء بوت ETH</b>\n"
+            f"الاستراتيجية: EMA+RSI\n"
             f"الصفقات النشطة: {active_trades}\n"
             f"الصفقات المفتوحة: {self.performance_stats['trades_opened']}\n"
             f"الصفقات المغلقة: {self.performance_stats['trades_closed']}\n"
@@ -928,7 +631,7 @@ class ScalpingTradingBot:
         self.notifier.send_message(message)
 
     def send_balance_report(self):
-        """إرسال تقرير بالرصيد الحقيقي"""
+        """إرسال تقرير الرصيد"""
         if not self.notifier:
             return
         
@@ -938,57 +641,25 @@ class ScalpingTradingBot:
             active_trades = self.trade_manager.get_active_trades_count()
             
             message = (
-                f"💰 <b>تقرير الرصيد الحقيقي</b>\n"
-                f"الجلسة: {self.dynamic_settings['session_name']}\n"
+                f"💰 <b>تقرير الرصيد</b>\n"
                 f"الرصيد الإجمالي: ${balance['total_balance']:.2f}\n"
                 f"الرصيد المتاح: ${balance['available_balance']:.2f}\n"
                 f"الصفقات النشطة: {active_trades}\n"
                 f"آخر تحديث: {datetime.now(damascus_tz).strftime('%H:%M:%S')}"
             )
             
-            self.notifier.send_message(message, 'balance_report')
+            self.notifier.send_message(message)
             
         except Exception as e:
             logger.error(f"❌ خطأ في إرسال تقرير الرصيد: {e}")
 
-    def send_session_report(self):
-        """إرسال تقرير الجلسة"""
-        if not self.notifier:
-            return
-        
-        self.adjust_settings_for_session()
-        current_session = self.session_manager.get_current_session()
-        session_name = [k for k, v in self.session_manager.sessions.items() if v['active']][0]
-        performance_multiplier = self.session_manager.get_session_performance_multiplier(session_name)
-        
-        message = (
-            f"🌍 <b>تقرير جلسة التداول EMA+RSI</b>\n"
-            f"الاستراتيجية: المتوسطات المتحركة + RSI\n"
-            f"الجلسة: {current_session['name']}\n"
-            f"الشدة: {self.dynamic_settings['trading_intensity']}\n"
-            f"مضاعف الأداء: {performance_multiplier:.0%}\n"
-            f"فاصل المسح: {self.dynamic_settings['rescan_interval']} دقائق\n"
-            f"الحد الأقصى للصفقات: {self.dynamic_settings['max_trades_per_cycle']}\n"
-            f"الحد الأقصى للرمز/ساعة: {self.dynamic_settings['max_trades_per_symbol_per_hour']}\n"
-            f"الوقت العالمي: {datetime.utcnow().strftime('%H:%M UTC')}\n"
-            f"الوقت دمشق: {datetime.now(damascus_tz).strftime('%H:%M')}"
-        )
-        self.notifier.send_message(message)
-
-    def send_heartbeat(self):
-        """إرسال نبضة"""
-        if self.notifier:
-            active_trades = self.trade_manager.get_active_trades_count()
-            message = f"💓 بوت السكالبينج EMA+RSI نشط - الجلسة: {self.dynamic_settings['session_name']} - الصفقات: {active_trades}"
-            self.notifier.send_message(message)
-
-    def get_historical_data(self, symbol, interval, limit=100):
+    def get_historical_data(self, limit=100):
         """جلب البيانات التاريخية"""
         time.sleep(0.1)
         try:
             klines = self.client.futures_klines(
-                symbol=symbol,
-                interval=interval,
+                symbol=self.TRADING_SETTINGS['symbol'],
+                interval=self.TRADING_SETTINGS['data_interval'],
                 limit=limit
             )
             
@@ -1007,66 +678,51 @@ class ScalpingTradingBot:
             return data.dropna()
             
         except Exception as e:
-            logger.error(f"❌ خطأ في جلب البيانات لـ {symbol}: {e}")
+            logger.error(f"❌ خطأ في جلب البيانات: {e}")
             return None
 
-    def get_current_price(self, symbol):
+    def get_current_price(self):
         """الحصول على السعر الحالي"""
         try:
-            ticker = self.client.futures_symbol_ticker(symbol=symbol)
+            ticker = self.client.futures_symbol_ticker(symbol=self.TRADING_SETTINGS['symbol'])
             return float(ticker['price'])
         except Exception as e:
-            logger.error(f"❌ خطأ في الحصول على سعر {symbol}: {e}")
+            logger.error(f"❌ خطأ في الحصول على سعر ETH: {e}")
             return None
 
-    def calculate_position_size(self, symbol, current_price):
-        """حساب حجم المركز بناءً على الرصيد المستخدم والرافعة"""
+    def calculate_position_size(self, current_price):
+        """حساب حجم المركز"""
         try:
             nominal_size = self.TRADING_SETTINGS['used_balance_per_trade'] * self.TRADING_SETTINGS['max_leverage']
             quantity = nominal_size / current_price
-            quantity = self.adjust_quantity(symbol, quantity)
             
-            if quantity and quantity > 0:
-                logger.info(f"💰 حجم الصفقة لـ {symbol}: {quantity:.6f}")
+            # ضبط الكمية حسب متطلبات المنصة
+            exchange_info = self.client.futures_exchange_info()
+            symbol_info = next((s for s in exchange_info['symbols'] if s['symbol'] == self.TRADING_SETTINGS['symbol']), None)
+            
+            if symbol_info:
+                lot_size_filter = next((f for f in symbol_info['filters'] if f['filterType'] == 'LOT_SIZE'), None)
+                if lot_size_filter:
+                    step_size = float(lot_size_filter['stepSize'])
+                    quantity = float(int(quantity / step_size) * step_size)
+            
+            if quantity > 0:
+                logger.info(f"💰 حجم الصفقة: {quantity:.6f}")
                 return quantity
             
             return None
             
         except Exception as e:
-            logger.error(f"❌ خطأ في حساب حجم المركز لـ {symbol}: {e}")
+            logger.error(f"❌ خطأ في حساب حجم المركز: {e}")
             return None
 
-    def adjust_quantity(self, symbol, quantity):
-        """ضبط الكمية حسب متطلبات المنصة"""
-        try:
-            exchange_info = self.client.futures_exchange_info()
-            symbol_info = next((s for s in exchange_info['symbols'] if s['symbol'] == symbol), None)
-            
-            if not symbol_info:
-                return None
-            
-            lot_size_filter = next((f for f in symbol_info['filters'] if f['filterType'] == 'LOT_SIZE'), None)
-            if not lot_size_filter:
-                return None
-            
-            step_size = float(lot_size_filter['stepSize'])
-            min_qty = float(lot_size_filter.get('minQty', 0))
-            
-            quantity = float(int(quantity / step_size) * step_size)
-            
-            if quantity < min_qty:
-                quantity = min_qty
-            
-            return round(quantity, 8)
-            
-        except Exception as e:
-            logger.error(f"❌ خطأ في ضبط الكمية: {e}")
-            return None
-
-    def set_leverage(self, symbol, leverage):
+    def set_leverage(self):
         """تعيين الرافعة المالية"""
         try:
-            self.client.futures_change_leverage(symbol=symbol, leverage=leverage)
+            self.client.futures_change_leverage(
+                symbol=self.TRADING_SETTINGS['symbol'], 
+                leverage=self.TRADING_SETTINGS['max_leverage']
+            )
             return True
         except Exception as e:
             logger.warning(f"⚠️ خطأ في تعيين الرافعة: {e}")
@@ -1075,37 +731,35 @@ class ScalpingTradingBot:
     def execute_trade(self, signal):
         """تنفيذ صفقة السكالبينج"""
         try:
-            symbol = signal['symbol']
             direction = signal['direction']
             
             # التحقق من إمكانية التداول
-            can_trade, reasons = self.can_open_trade(symbol, direction)
+            can_trade, reasons = self.can_open_trade(direction)
             if not can_trade:
-                logger.info(f"⏭️ تخطي {symbol} {direction}: {', '.join(reasons)}")
+                logger.info(f"⏭️ تخطي ETH {direction}: {', '.join(reasons)}")
                 return False
             
-            current_price = self.get_current_price(symbol)
+            current_price = self.get_current_price()
             if not current_price:
-                logger.error(f"❌ لا يمكن الحصول على سعر {symbol}")
+                logger.error(f"❌ لا يمكن الحصول على سعر ETH")
                 return False
             
             # حساب حجم المركز
-            quantity = self.calculate_position_size(symbol, current_price)
+            quantity = self.calculate_position_size(current_price)
             if not quantity:
-                logger.warning(f"⚠️ لا يمكن حساب حجم آمن لـ {symbol}")
+                logger.warning(f"⚠️ لا يمكن حساب حجم آمن")
                 return False
             
             # تعيين الرافعة
-            leverage = self.TRADING_SETTINGS['max_leverage']
-            self.set_leverage(symbol, leverage)
+            self.set_leverage()
             
-            # تنفيذ الأمر الرئيسي
+            # تنفيذ الأمر
             side = 'BUY' if direction == 'LONG' else 'SELL'
             
-            logger.info(f"⚡ تنفيذ صفقة سكالبينج {symbol}: {direction} | الكمية: {quantity:.6f}")
+            logger.info(f"⚡ تنفيذ صفقة ETH: {direction} | الكمية: {quantity:.6f}")
             
             order = self.client.futures_create_order(
-                symbol=symbol,
+                symbol=self.TRADING_SETTINGS['symbol'],
                 side=side,
                 type='MARKET',
                 quantity=quantity
@@ -1114,7 +768,10 @@ class ScalpingTradingBot:
             if order and order['orderId']:
                 executed_price = current_price
                 try:
-                    order_info = self.client.futures_get_order(symbol=symbol, orderId=order['orderId'])
+                    order_info = self.client.futures_get_order(
+                        symbol=self.TRADING_SETTINGS['symbol'], 
+                        orderId=order['orderId']
+                    )
                     if order_info.get('avgPrice'):
                         executed_price = float(order_info['avgPrice'])
                 except:
@@ -1125,39 +782,35 @@ class ScalpingTradingBot:
                 
                 # تسجيل الصفقة
                 trade_data = {
-                    'symbol': symbol,
+                    'symbol': self.TRADING_SETTINGS['symbol'],
                     'quantity': quantity,
                     'entry_price': executed_price,
                     'side': direction,
-                    'leverage': leverage,
+                    'leverage': self.TRADING_SETTINGS['max_leverage'],
                     'timestamp': datetime.now(damascus_tz),
                     'status': 'open',
                     'signal_confidence': signal['confidence'],
                     'nominal_value': nominal_value,
                     'expected_profit': expected_profit,
-                    'strategy': signal.get('strategy', 'EMA_RSI')
+                    'strategy': 'EMA_RSI'
                 }
                 
-                self.trade_manager.add_trade(symbol, trade_data)
+                self.trade_manager.add_trade(trade_data)
                 self.performance_stats['trades_opened'] += 1
                 self.performance_stats['daily_trades_count'] += 1
-                self.performance_stats['hourly_trade_count'] += 1
                 self.performance_stats['last_trade_time'] = datetime.now(damascus_tz)
                 
                 # إرسال إشعار
                 if self.notifier:
-                    strategy_indicator = " 📈" if signal.get('strategy') == 'EMA_RSI' else ""
                     risk_reward_ratio = self.TRADING_SETTINGS['target_profit_pct'] / self.TRADING_SETTINGS['stop_loss_pct']
                     
                     message = (
-                        f"{'🟢' if direction == 'LONG' else '🔴'} <b>فتح صفقة سكالبينج EMA+RSI{strategy_indicator}</b>\n"
-                        f"الجلسة: {self.dynamic_settings['session_name']}\n"
-                        f"العملة: {symbol}\n"
+                        f"{'🟢' if direction == 'LONG' else '🔴'} <b>فتح صفقة ETH</b>\n"
                         f"الاتجاه: {direction}\n"
                         f"الكمية: {quantity:.6f}\n"
                         f"سعر الدخول: ${executed_price:.4f}\n"
                         f"القيمة الاسمية: ${nominal_value:.2f}\n"
-                        f"الرافعة: {leverage}x\n"
+                        f"الرافعة: {self.TRADING_SETTINGS['max_leverage']}x\n"
                         f"🎯 الهدف: {self.TRADING_SETTINGS['target_profit_pct']}%\n"
                         f"🛡️ الوقف: {self.TRADING_SETTINGS['stop_loss_pct']}%\n"
                         f"⚖️ النسبة: {risk_reward_ratio:.2f}:1\n"
@@ -1169,23 +822,23 @@ class ScalpingTradingBot:
                     )
                     self.notifier.send_message(message)
                 
-                logger.info(f"✅ تم فتح صفقة سكالبينج {direction} لـ {symbol}")
+                logger.info(f"✅ تم فتح صفقة {direction} لـ ETH")
                 return True
             
             return False
             
         except Exception as e:
-            logger.error(f"❌ فشل تنفيذ صفقة {symbol}: {e}")
+            logger.error(f"❌ فشل تنفيذ صفقة ETH: {e}")
             return False
 
-    def close_trade(self, symbol, reason="إغلاق طبيعي"):
+    def close_trade(self, reason="إغلاق طبيعي"):
         """إغلاق الصفقة"""
         try:
-            trade = self.trade_manager.get_trade(symbol)
+            trade = self.trade_manager.get_trade()
             if not trade:
                 return False
             
-            current_price = self.get_current_price(symbol)
+            current_price = self.get_current_price()
             if not current_price:
                 return False
             
@@ -1193,7 +846,7 @@ class ScalpingTradingBot:
             quantity = trade['quantity']
             
             order = self.client.futures_create_order(
-                symbol=symbol,
+                symbol=self.TRADING_SETTINGS['symbol'],
                 side=close_side,
                 type='MARKET',
                 quantity=quantity,
@@ -1218,18 +871,16 @@ class ScalpingTradingBot:
                     self.performance_stats['consecutive_losses'] += 1
                     self.performance_stats['consecutive_wins'] = 0
                     
-                    # إضافة تبريد بعد خسائر متتالية على نفس الرمز
+                    # إضافة تبديد بعد خسائر متتالية
                     if self.performance_stats['consecutive_losses'] >= 2:
-                        self.trade_manager.add_symbol_cooldown(symbol, self.TRADING_SETTINGS['cooldown_after_loss'])
+                        self.trade_manager.add_symbol_cooldown('ETHUSDT', self.TRADING_SETTINGS['cooldown_after_loss'])
                 
                 self.performance_stats['total_pnl'] += pnl_pct
                 
                 if self.notifier:
                     pnl_emoji = "🟢" if pnl_pct > 0 else "🔴"
                     message = (
-                        f"🔒 <b>إغلاق صفقة سكالبينج EMA+RSI</b>\n"
-                        f"الجلسة: {self.dynamic_settings['session_name']}\n"
-                        f"العملة: {symbol}\n"
+                        f"🔒 <b>إغلاق صفقة ETH</b>\n"
                         f"الاتجاه: {trade['side']}\n"
                         f"الربح/الخسارة: {pnl_emoji} {pnl_pct:+.2f}%\n"
                         f"السبب: {reason}\n"
@@ -1238,95 +889,57 @@ class ScalpingTradingBot:
                     )
                     self.notifier.send_message(message)
                 
-                self.trade_manager.remove_trade(symbol)
-                logger.info(f"✅ تم إغلاق صفقة {symbol} - الربح/الخسارة: {pnl_pct:+.2f}%")
+                self.trade_manager.remove_trade()
+                logger.info(f"✅ تم إغلاق صفقة ETH - الربح/الخسارة: {pnl_pct:+.2f}%")
                 return True
             
             return False
             
         except Exception as e:
-            logger.error(f"❌ فشل إغلاق صفقة {symbol}: {e}")
+            logger.error(f"❌ فشل إغلاق صفقة ETH: {e}")
             return False
 
     def scan_market(self):
         """مسح السوق للعثور على فرص السكالبينج"""
-        logger.info("🔍 بدء مسح السوق باستراتيجية EMA+RSI...")
+        logger.info("🔍 بدء مسح السوق لـ ETH...")
         
-        opportunities = []
-        current_session = self.session_manager.get_current_session()
-        
-        for symbol in self.TRADING_SETTINGS['symbols']:
-            try:
-                # تخطي الرموز ذات الصفقات النشطة
-                if self.trade_manager.is_symbol_trading(symbol):
-                    continue
-                
-                # التحقق من تركيز الجلسة على الرمز
-                if not self.session_manager.should_trade_symbol(symbol, current_session):
-                    continue
-                
-                data = self.get_historical_data(symbol, self.TRADING_SETTINGS['data_interval'])
-                if data is None or len(data) < 50:
-                    continue
-                
-                current_price = self.get_current_price(symbol)
-                if not current_price:
-                    continue
-                
-                signal = self.signal_generator.generate_signal(symbol, data, current_price)
-                if signal:
-                    enhanced_confidence = self.get_session_enhanced_confidence(signal['confidence'])
-                    signal['confidence'] = enhanced_confidence
-                    
-                    opportunities.append(signal)
-                    
-                    if self.notifier:
-                        self.notifier.send_trade_alert(symbol, signal, current_price)
-                
-            except Exception as e:
-                logger.error(f"❌ خطأ في تحليل {symbol}: {e}")
-                continue
-        
-        opportunities.sort(key=lambda x: x['confidence'], reverse=True)
-        
-        logger.info(f"🎯 تم العثور على {len(opportunities)} فرصة سكالبينج في جلسة {self.dynamic_settings['session_name']}")
-        return opportunities
+        try:
+            data = self.get_historical_data()
+            if data is None or len(data) < 50:
+                return None
+            
+            current_price = self.get_current_price()
+            if not current_price:
+                return None
+            
+            signal = self.signal_generator.generate_signal(data, current_price)
+            if signal:
+                logger.info(f"🎯 تم العثور على إشارة ETH: {signal['direction']} (ثقة: {signal['confidence']:.2%})")
+                return signal
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في تحليل ETH: {e}")
+            return None
 
     def execute_trading_cycle(self):
-        """تنفيذ دورة التداول للسكالبينج مع مراعاة الجلسة"""
+        """تنفيذ دورة التداول"""
         try:
-            self.adjust_settings_for_session()
-            
-            if self.should_skip_trading():
-                wait_time = self.dynamic_settings['rescan_interval'] * 60
-                logger.info(f"💤 وضع السكون - انتظار {wait_time/60:.0f} دقائق")
-                time.sleep(wait_time)
-                return
-            
             start_time = time.time()
-            opportunities = self.scan_market()
+            signal = self.scan_market()
             
-            executed_trades = 0
-            max_trades = self.dynamic_settings['max_trades_per_cycle']
-            
-            for signal in opportunities:
-                if executed_trades >= max_trades:
-                    break
-                
-                if self.execute_trade(signal):
-                    executed_trades += 1
-                    time.sleep(1)
+            if signal and self.execute_trade(signal):
+                logger.info("✅ تم تنفيذ صفقة ETH بنجاح")
             
             elapsed_time = time.time() - start_time
-            wait_time = (self.dynamic_settings['rescan_interval'] * 60) - elapsed_time
+            wait_time = (self.TRADING_SETTINGS['rescan_interval_minutes'] * 60) - elapsed_time
             
             if wait_time > 0:
-                logger.info(f"⏳ انتظار {wait_time:.1f} ثانية للدورة القادمة في جلسة {self.dynamic_settings['session_name']}")
+                logger.info(f"⏳ انتظار {wait_time:.1f} ثانية للدورة القادمة")
                 time.sleep(wait_time)
             else:
-                logger.info(f"⚡ بدء الدورة التالية فوراً في جلسة {self.dynamic_settings['session_name']}")
-            
-            logger.info(f"✅ اكتملت دورة السكالبينج في جلسة {self.dynamic_settings['session_name']} - تم تنفيذ {executed_trades} صفقة")
+                logger.info("⚡ بدء الدورة التالية فوراً")
             
         except Exception as e:
             logger.error(f"❌ خطأ في دورة التداول: {e}")
@@ -1351,21 +964,21 @@ class ScalpingTradingBot:
             for trade in trades.values()
         ]
 
-    def get_market_analysis(self, symbol):
-        """الحصول على تحليل السوق لرمز معين"""
+    def get_market_analysis(self):
+        """الحصول على تحليل السوق"""
         try:
-            data = self.get_historical_data(symbol, self.TRADING_SETTINGS['data_interval'])
+            data = self.get_historical_data()
             if data is None:
                 return {'error': 'لا توجد بيانات'}
             
-            current_price = self.get_current_price(symbol)
+            current_price = self.get_current_price()
             if not current_price:
                 return {'error': 'لا يمكن الحصول على السعر'}
             
-            signal = self.signal_generator.generate_signal(symbol, data, current_price)
+            signal = self.signal_generator.generate_signal(data, current_price)
             
             return {
-                'symbol': symbol,
+                'symbol': 'ETHUSDT',
                 'current_price': current_price,
                 'signal': signal,
                 'timestamp': datetime.now(damascus_tz).isoformat()
@@ -1373,28 +986,6 @@ class ScalpingTradingBot:
             
         except Exception as e:
             return {'error': str(e)}
-
-    def get_current_session_info(self):
-        """الحصول على معلومات الجلسة الحالية"""
-        current_session = self.session_manager.get_current_session()
-        session_name = [k for k, v in self.session_manager.sessions.items() if v['active']][0]
-        session_schedule = self.session_manager.get_session_schedule()
-        
-        return {
-            'current_session': {
-                'name': current_session['name'],
-                'intensity': self.dynamic_settings['trading_intensity'],
-                'performance_multiplier': self.session_manager.get_session_performance_multiplier(session_name),
-                'rescan_interval': self.dynamic_settings['rescan_interval'],
-                'max_trades_per_cycle': self.dynamic_settings['max_trades_per_cycle'],
-                'max_trades_per_symbol_per_hour': self.dynamic_settings['max_trades_per_symbol_per_hour']
-            },
-            'schedule': session_schedule,
-            'time_info': {
-                'utc_time': datetime.utcnow().strftime('%H:%M UTC'),
-                'damascus_time': datetime.now(damascus_tz).strftime('%H:%M دمشق')
-            }
-        }
 
     def get_performance_stats(self):
         """الحصول على إحصائيات الأداء"""
@@ -1413,7 +1004,6 @@ class ScalpingTradingBot:
                 'win_rate': round(win_rate, 1),
                 'total_pnl': round(self.performance_stats['total_pnl'], 2),
                 'daily_trades_count': self.performance_stats['daily_trades_count'],
-                'hourly_trade_count': self.performance_stats['hourly_trade_count'],
                 'consecutive_losses': self.performance_stats['consecutive_losses'],
                 'consecutive_wins': self.performance_stats['consecutive_wins']
             },
@@ -1426,22 +1016,21 @@ class ScalpingTradingBot:
                 'nominal_trade_size': self.TRADING_SETTINGS['nominal_trade_size']
             },
             'strategy': 'EMA_RSI',
-            'current_session': self.dynamic_settings['session_name']
+            'symbol': 'ETHUSDT'
         }
 
     def run(self):
         """تشغيل البوت الرئيسي"""
-        logger.info("🚀 بدء تشغيل بوت السكالبينج باستراتيجية EMA+RSI...")
+        logger.info("🚀 بدء تشغيل بوت ETH السكالبينج...")
         
         flask_thread = threading.Thread(target=run_flask_app, daemon=True)
         flask_thread.start()
         
         if self.notifier:
             self.notifier.send_message(
-                "🚀 <b>بدء تشغيل بوت السكالبينج باستراتيجية EMA+RSI</b>\n"
+                "🚀 <b>بدء تشغيل بوت ETH السكالبينج</b>\n"
                 f"الاستراتيجية: المتوسطات المتحركة + RSI\n"
                 f"المؤشرات: EMA 9/21/50 + RSI 9/14\n"
-                f"نظام الجلسات الذكي: نشط ✅\n"
                 f"الرافعة: {self.TRADING_SETTINGS['max_leverage']}x\n"
                 f"القيمة الاسمية: ${self.TRADING_SETTINGS['nominal_trade_size']}\n"
                 f"الصفقات النشطة: {self.TRADING_SETTINGS['max_active_trades']}\n"
@@ -1464,7 +1053,7 @@ class ScalpingTradingBot:
         except Exception as e:
             logger.error(f"❌ خطأ غير متوقع: {e}")
         finally:
-            logger.info("🛑 إيقاف بوت السكالبينج EMA+RSI...")
+            logger.info("🛑 إيقاف بوت ETH السكالبينج...")
 
 def main():
     """الدالة الرئيسية"""
