@@ -99,7 +99,7 @@ class TradingSessionManager:
                 'name': 'الجلسة الآسيوية',
                 'start_hour_utc': 0,
                 'end_hour_utc': 7,
-                'symbols_focus': ['BNBUSDT', 'ADAUSDT'],  # تركيز على BNB في الجلسة الآسيوية
+                'symbols_focus': ['BTCUSDT'],  # تركيز على BTC فقط
                 'active': False,
                 'performance_multiplier': 0.6,
                 'max_trades_per_hour': 2
@@ -108,7 +108,7 @@ class TradingSessionManager:
                 'name': 'تداخل أوروبا-أمريكا (الأفضل)',
                 'start_hour_utc': 13,
                 'end_hour_utc': 17,
-                'symbols_focus': ['ETHUSDT', 'BTCUSDT', 'BNBUSDT'],
+                'symbols_focus': ['BTCUSDT'],  # تركيز على BTC فقط
                 'active': False,
                 'performance_multiplier': 1.0,
                 'max_trades_per_hour': 4
@@ -117,7 +117,7 @@ class TradingSessionManager:
                 'name': 'الجلسة الأمريكية',
                 'start_hour_utc': 13,
                 'end_hour_utc': 21,
-                'symbols_focus': ['ETHUSDT', 'BTCUSDT', 'BNBUSDT'],
+                'symbols_focus': ['BTCUSDT'],  # تركيز على BTC فقط
                 'active': False,
                 'performance_multiplier': 0.8,
                 'max_trades_per_hour': 3
@@ -595,12 +595,12 @@ class TelegramNotifier:
         direction_emoji = "🟢" if signal['direction'] == 'LONG' else "🔴"
         
         message = (
-            f"{direction_emoji} <b>إشارة اختراق النطاق</b>\n"
+            f"{direction_emoji} <b>إشارة اختراق النطاق - BTC</b>\n"
             f"العملة: {symbol}\n"
             f"الاتجاه: {signal['direction']}\n"
-            f"السعر: ${current_price:.4f}\n"
-            f"المقاومة: ${signal['resistance']:.4f}\n"
-            f"الدعم: ${signal['support']:.4f}\n"
+            f"السعر: ${current_price:.2f}\n"
+            f"المقاومة: ${signal['resistance']:.2f}\n"
+            f"الدعم: ${signal['support']:.2f}\n"
             f"عرض النطاق: {signal['range_width_pct']:.2f}%\n"
             f"الثقة: {signal['confidence']:.2%}\n"
             f"الشروط: {signal['conditions_met']}/{signal['total_conditions']}\n"
@@ -612,7 +612,7 @@ class ScalpingTradingBot:
     _instance = None
     
     TRADING_SETTINGS = {
-        'symbols': ["BTCUSDT"],  # تركيز على العملات الرئيسية للاستراتيجية
+        'symbols': ["BTCUSDT"],  # BTC فقط
         'used_balance_per_trade': 5,
         'max_leverage': 5,
         'nominal_trade_size': 25,
@@ -624,7 +624,7 @@ class ScalpingTradingBot:
         'target_profit_multiplier': 2.0,  # ضعف عرض النطاق كما في الاستراتيجية
         'stop_loss_buffer': 0.001,  # داخل النطاق
         'max_trade_hours': 6,  # 6 ساعات كحد أقصى
-        'max_daily_trades': 20,
+        'max_daily_trades': 15,  # تقليل عدد الصفقات اليومية لـ BTC
         'cooldown_after_loss': 20,
         
         # إعدادات التوقيت الذكي المحسنة
@@ -723,7 +723,7 @@ class ScalpingTradingBot:
         self.send_startup_message()
         
         ScalpingTradingBot._instance = self
-        logger.info("✅ تم تهيئة بوت استراتيجية الاختراق بنجاح")
+        logger.info("✅ تم تهيئة بوت استراتيجية الاختراق لـ BTC بنجاح")
 
     def test_connection(self):
         """اختبار اتصال API"""
@@ -883,7 +883,7 @@ class ScalpingTradingBot:
             elif direction == 'SHORT' and (stop_loss - entry_price) < min_sl_distance:
                 stop_loss = entry_price + min_sl_distance
             
-            logger.info(f"🎯 مستويات {direction}: الدخول ${entry_price:.4f}, جني ${take_profit:.4f}, وقف ${stop_loss:.4f}")
+            logger.info(f"🎯 مستويات {direction}: الدخول ${entry_price:.2f}, جني ${take_profit:.2f}, وقف ${stop_loss:.2f}")
             
             return take_profit, stop_loss
             
@@ -956,7 +956,7 @@ class ScalpingTradingBot:
             # إرسال إشعار
             self.notifier.send_trade_alert(symbol, signal, current_price)
             
-            logger.info(f"✅ تم فتح صفقة {direction} على {symbol} - السعر: ${current_price:.4f}")
+            logger.info(f"✅ تم فتح صفقة {direction} على {symbol} - السعر: ${current_price:.2f}")
             return True
             
         except Exception as e:
@@ -1055,12 +1055,12 @@ class ScalpingTradingBot:
             }.get(close_reason, '📄')
             
             message = (
-                f"{reason_emoji} <b>إغلاق صفقة اختراق</b>\n"
+                f"{reason_emoji} <b>إغلاق صفقة اختراق BTC</b>\n"
                 f"العملة: {symbol}\n"
                 f"الاتجاه: {direction}\n"
                 f"سبب الإغلاق: {close_reason}\n"
-                f"سعر الدخول: ${entry_price:.4f}\n"
-                f"سعر الإغلاق: ${current_price:.4f}\n"
+                f"سعر الدخول: ${entry_price:.2f}\n"
+                f"سعر الإغلاق: ${current_price:.2f}\n"
                 f"الربح/الخسارة: {pnl_percent:+.2f}%\n"
                 f"الوقت: {datetime.now(damascus_tz).strftime('%H:%M:%S')}"
             )
@@ -1119,7 +1119,7 @@ class ScalpingTradingBot:
         try:
             signals_found = []
             
-            for symbol in self.TRADING_SETTINGS['symbols']:
+            for symbol in self.TRADING_SETTINGS['symbols']:  # سيكون BTCUSDT فقط
                 # التحقق من الجلسة الحالية
                 current_session = self.session_manager.get_current_session()
                 if not self.session_manager.should_trade_symbol(symbol, current_session):
@@ -1153,7 +1153,7 @@ class ScalpingTradingBot:
     def trading_cycle(self):
         """دورة التداول الرئيسية لاستراتيجية الاختراق"""
         try:
-            logger.info("🔄 بدء دورة تداول استراتيجية الاختراق...")
+            logger.info("🔄 بدء دورة تداول استراتيجية الاختراق لـ BTC...")
             
             # تحديث الإعدادات بناءً على الجلسة
             self.adjust_settings_for_session()
@@ -1196,9 +1196,9 @@ class ScalpingTradingBot:
                 else:
                     logger.info(f"⏸️ لم يتم تنفيذ صفقة {best_signal['symbol']} بسبب القيود")
             else:
-                logger.info("🔍 لم يتم العثور على إشارات اختراق مناسبة")
+                logger.info("🔍 لم يتم العثور على إشارات اختراق مناسبة لـ BTC")
             
-            logger.info("✅ اكتملت دورة تداول استراتيجية الاختراق")
+            logger.info("✅ اكتملت دورة تداول استراتيجية الاختراق لـ BTC")
             
         except Exception as e:
             logger.error(f"❌ خطأ في دورة التداول: {e}")
@@ -1222,7 +1222,7 @@ class ScalpingTradingBot:
             scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
             scheduler_thread.start()
             
-            logger.info("✅ بدء خدمات البوت")
+            logger.info("✅ بدء خدمات البوت المخصص لـ BTC")
             
         except Exception as e:
             logger.error(f"❌ خطأ في بدء خدمات البوت: {e}")
@@ -1242,7 +1242,7 @@ class ScalpingTradingBot:
                 self.performance_stats['hourly_trade_count'] = 0
                 self.performance_stats['last_hour_reset'] = current_time
             
-            logger.info("🔧 اكتملت مهام الصيانة")
+            logger.info("🔧 اكتملت مهام الصيانة لـ BTC")
             
         except Exception as e:
             logger.error(f"❌ خطأ في مهام الصيانة: {e}")
@@ -1250,17 +1250,20 @@ class ScalpingTradingBot:
     def reset_daily_stats(self):
         """إعادة تعيين الإحصائيات اليومية"""
         self.performance_stats['daily_trades_count'] = 0
-        logger.info("🔄 إعادة تعيين الإحصائيات اليومية")
+        logger.info("🔄 إعادة تعيين الإحصائيات اليومية لـ BTC")
 
     def send_startup_message(self):
         """إرسال رسالة بدء التشغيل"""
         message = (
-            "🚀 <b>بدء تشغيل بوت استراتيجية الاختراق</b>\n\n"
+            "🚀 <b>بدء تشغيل بوت استراتيجية الاختراق - BTC فقط</b>\n\n"
             f"💰 الرصيد: ${self.real_time_balance['total_balance']:.2f}\n"
-            f"📊 الرموز: {', '.join(self.TRADING_SETTINGS['symbols'])}\n"
-            f"🎯 الاستراتيجية: اختراق النطاق\n"
+            f"🎯 العملة: BTCUSDT\n"
+            f"📊 الاستراتيجية: اختراق النطاق\n"
+            f"🎯 هدف الربح: ضعف عرض النطاق\n"
+            f"🛑 وقف الخسارة: داخل النطاق\n"
+            f"⏰ الحد الزمني: 6 ساعات\n"
             f"⏰ توقيت دمشق: {datetime.now(damascus_tz).strftime('%H:%M:%S')}\n\n"
-            "<i>البوت جاهز للتداول الآلي</i>"
+            "<i>البوت جاهز للتداول الآلي على BTC</i>"
         )
         self.notifier.send_message(message)
 
@@ -1362,7 +1365,8 @@ class ScalpingTradingBot:
             'consecutive_losses': self.performance_stats['consecutive_losses'],
             'active_trades_count': self.trade_manager.get_active_trades_count(),
             'current_balance': self.real_time_balance['total_balance'],
-            'available_balance': self.real_time_balance['available_balance']
+            'available_balance': self.real_time_balance['available_balance'],
+            'trading_symbol': 'BTCUSDT'
         }
 
 def main():
