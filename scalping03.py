@@ -224,8 +224,8 @@ class AdvancedScalpingSignalGenerator:
     """مولد إشارات السكالبينج المتقدم مع شروط مشددة"""
     
     def __init__(self):
-        self.min_confidence = 0.70  # ⬅️ زيادة من 0.70 إلى 0.75
-        self.min_conditions = 5     # ⬅️ اشتراط 6/6 شروط
+        self.min_confidence = 0.75  # ⬅️ زيادة من 0.70 إلى 0.75
+        self.min_conditions = 6     # ⬅️ اشتراط 6/6 شروط
     
     def generate_signal(self, symbol, data, current_price):
         """توليد إشارة سكالبينج متقدمة"""
@@ -613,10 +613,10 @@ class ScalpingTradingBot:
         'used_balance_per_trade': 5,
         'max_leverage': 4,
         'nominal_trade_size': 24,
-        'max_active_trades': 3,
+        'max_active_trades': 4,
         'data_interval': '3m',
         'rescan_interval_minutes': 2,
-        'min_signal_confidence': 0.70,  # ⬅️ زيادة من 0.70 إلى 0.75
+        'min_signal_confidence': 0.74,  # ⬅️ زيادة من 0.70 إلى 0.75
         'target_profit_pct': 0.25,     # ⬅️ زيادة من 0.15% إلى 0.25%
         'stop_loss_pct': 0.15,         # ⬅️ زيادة من 0.10% إلى 0.15%
         'max_daily_trades': 30,        # ⬅️ تقليل من 30 إلى 25
