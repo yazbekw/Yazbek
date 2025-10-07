@@ -385,10 +385,10 @@ class ScalpingTradingBot:
     _instance = None
     
     TRADING_SETTINGS = {
-        'symbols': ["ETHUSDT", "ADAUSDT", "DOTUSDT", "LINKUSDT"],  # العملات المضافة
+        'symbols': ["ETHUSDT", "BNBUSDT", "DOTUSDT", "LINKUSDT"],  # العملات المضافة
         'symbol_settings': {
         'ETHUSDT': {'used_balance': 8, 'leverage': 5, 'nominal_trade_size': 40},  # ✅
-        'ADAUSDT': {'used_balance': 6, 'leverage': 5, 'nominal_trade_size': 30},  # ⚠️ تصحيح
+        'BNBUSDT': {'used_balance': 8, 'leverage': 5, 'nominal_trade_size': 40},  # ⚠️ تصحيح
         'DOTUSDT': {'used_balance': 6, 'leverage': 5, 'nominal_trade_size': 30},  # ⚠️ تصحيح  
         'LINKUSDT': {'used_balance': 6, 'leverage': 5, 'nominal_trade_size': 30}  # ⚠️ تصحيح
         },
