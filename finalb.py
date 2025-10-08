@@ -229,7 +229,7 @@ class SupportResistanceSignalGenerator:
         best_signal = max(signals, key=lambda x: x['confidence'])
         
         return {
-            'symbol': 'BNBUSDT',
+            'symbol': 'ETHUSDT',
             'direction': best_signal['direction'],
             'confidence': best_signal['confidence'],
             'conditions_met': best_signal['conditions_met'],
@@ -256,7 +256,7 @@ class TradeManager:
                 symbol = position['symbol']
                 quantity = float(position['positionAmt'])
                 
-                if quantity != 0 and symbol == 'BNBUSDT':
+                if quantity != 0 and symbol == 'ETHUSDT':
                     if symbol not in self.active_trades:
                         side = "LONG" if quantity > 0 else "SHORT"
                         self.active_trades[symbol] = {
@@ -267,7 +267,7 @@ class TradeManager:
                             'timestamp': datetime.now(damascus_tz),
                             'status': 'open'
                         }
-                elif symbol == 'BNBUSDT' and symbol in self.active_trades:
+                elif symbol == 'ETHUSDT' and symbol in self.active_trades:
                     closed_trade = self.active_trades[symbol]
                     closed_trade['status'] = 'closed'
                     del self.active_trades[symbol]
@@ -358,10 +358,10 @@ class ScalpingTradingBot:
     _instance = None
     
     TRADING_SETTINGS = {
-        'symbol': "BNBUSDT",  # BNB فقط
+        'symbol': "ETHUSDT",  # ETH فقط
         'used_balance_per_trade': 5,
-        'max_leverage': 5,
-        'nominal_trade_size': 25,
+        'max_leverage': 8,
+        'nominal_trade_size': 40,
         'max_active_trades': 1,  # صفقة واحدة فقط
         'data_interval_1h': '1h',
         'data_interval_15m': '15m',
@@ -423,7 +423,7 @@ class ScalpingTradingBot:
         self.send_startup_message()
         
         ScalpingTradingBot._instance = self
-        logger.info("✅ تم تهيئة بوت BNB السكالبينج باستراتيجية الدعم والمقاومة بنجاح")
+        logger.info("✅ تم تهيئة بوت ETH السكالبينج باستراتيجية الدعم والمقاومة بنجاح")
 
     def test_connection(self):
         """اختبار اتصال API"""
@@ -561,7 +561,7 @@ class ScalpingTradingBot:
             balance = self.real_time_balance
             
             message = (
-                "⚡ <b>بدء تشغيل بوت BNB السكالبينج</b>\n"
+                "⚡ <b>بدء تشغيل بوت ETH السكالبينج</b>\n"
                 f"<b>الاستراتيجية:</b> ارتداد السعر من مستويات الدعم والمقاومة\n"
                 f"<b>المؤشرات:</b> RSI + أنماط الشموع + مستويات الدعم/المقاومة\n"
                 f"<b>الإعدادات:</b>\n"
@@ -588,7 +588,7 @@ class ScalpingTradingBot:
         risk_reward_ratio = self.TRADING_SETTINGS['target_profit_pct'] / self.TRADING_SETTINGS['stop_loss_pct']
         
         message = (
-            f"📊 <b>تقرير أداء بوت BNB</b>\n"
+            f"📊 <b>تقرير أداء بوت ETH</b>\n"
             f"الاستراتيجية: ارتداد من الدعم والمقاومة\n"
             f"الصفقات النشطة: {active_trades}\n"
             f"الصفقات المفتوحة: {self.performance_stats['trades_opened']}\n"
@@ -708,7 +708,7 @@ class ScalpingTradingBot:
             # التحقق من إمكانية التداول
             can_trade, reasons = self.can_open_trade(direction)
             if not can_trade:
-                logger.info(f"⏭️ تخطي BNB {direction}: {', '.join(reasons)}")
+                logger.info(f"⏭️ تخطي ETH {direction}: {', '.join(reasons)}")
                 return False
             
             current_price = self.get_current_price()
@@ -728,7 +728,7 @@ class ScalpingTradingBot:
             # تنفيذ الأمر
             side = 'BUY' if direction == 'LONG' else 'SELL'
             
-            logger.info(f"⚡ تنفيذ صفقة BNB: {direction} | الكمية: {quantity:.6f}")
+            logger.info(f"⚡ تنفيذ صفقة ETH: {direction} | الكمية: {quantity:.6f}")
             
             order = self.client.futures_create_order(
                 symbol=self.TRADING_SETTINGS['symbol'],
@@ -794,7 +794,7 @@ class ScalpingTradingBot:
                     )
                     self.notifier.send_message(message)
                 
-                logger.info(f"✅ تم فتح صفقة {direction} لـ BNB")
+                logger.info(f"✅ تم فتح صفقة {direction} لـ ETH")
                 return True
             
             return False
@@ -850,7 +850,7 @@ class ScalpingTradingBot:
                 if self.notifier:
                     pnl_emoji = "🟢" if pnl_pct > 0 else "🔴"
                     message = (
-                        f"🔒 <b>إغلاق صفقة BNB</b>\n"
+                        f"🔒 <b>إغلاق صفقة ETH</b>\n"
                         f"الاتجاه: {trade['side']}\n"
                         f"الربح/الخسارة: {pnl_emoji} {pnl_pct:+.2f}%\n"
                         f"السبب: {reason}\n"
@@ -860,7 +860,7 @@ class ScalpingTradingBot:
                     self.notifier.send_message(message)
                 
                 self.trade_manager.remove_trade()
-                logger.info(f"✅ تم إغلاق صفقة BNB - الربح/الخسارة: {pnl_pct:+.2f}%")
+                logger.info(f"✅ تم إغلاق صفقة ETH - الربح/الخسارة: {pnl_pct:+.2f}%")
                 return True
             
             return False
@@ -952,7 +952,7 @@ class ScalpingTradingBot:
             signal = self.signal_generator.generate_signal(data_1h, data_15m, current_price)
             
             return {
-                'symbol': 'BNBUSDT',
+                'symbol': 'ETHUSDT',
                 'current_price': current_price,
                 'signal': signal,
                 'timestamp': datetime.now(damascus_tz).isoformat()
@@ -989,19 +989,19 @@ class ScalpingTradingBot:
                 'nominal_trade_size': self.TRADING_SETTINGS['nominal_trade_size']
             },
             'strategy': 'SUPPORT_RESISTANCE',
-            'symbol': 'BNBUSDT'
+            'symbol': 'ETHUSDT'
         }
 
     def run(self):
         """تشغيل البوت الرئيسي"""
-        logger.info("🚀 بدء تشغيل بوت BNB السكالبينج...")
+        logger.info("🚀 بدء تشغيل بوت ETH السكالبينج...")
         
         flask_thread = threading.Thread(target=run_flask_app, daemon=True)
         flask_thread.start()
         
         if self.notifier:
             self.notifier.send_message(
-                "🚀 <b>بدء تشغيل بوت BNB السكالبينج</b>\n"
+                "🚀 <b>بدء تشغيل بوت ETH السكالبينج</b>\n"
                 f"الاستراتيجية: ارتداد السعر من مستويات الدعم والمقاومة\n"
                 f"المؤشرات: RSI + أنماط الشموع + مستويات الدعم/المقاومة\n"
                 f"الرافعة: {self.TRADING_SETTINGS['max_leverage']}x\n"
@@ -1026,7 +1026,7 @@ class ScalpingTradingBot:
         except Exception as e:
             logger.error(f"❌ خطأ غير متوقع: {e}")
         finally:
-            logger.info("🛑 إيقاف بوت BNB السكالبينج...")
+            logger.info("🛑 إيقاف بوت ETH السكالبينج...")
 
 def main():
     """الدالة الرئيسية"""
