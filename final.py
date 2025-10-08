@@ -388,8 +388,8 @@ class ScalpingTradingBot:
         'symbols': ["ETHUSDT", "SOLUSDT", "AVAXUSDT"],  # العملات المضافة
         'symbol_settings': {
         'ETHUSDT': {'used_balance': 8, 'leverage': 5, 'nominal_trade_size': 40},  # ✅
-        'SOLSDT': {'used_balance': 6, 'leverage': 5, 'nominal_trade_size': 30},  # ⚠️ تصحيح  
-        'AVAXUSDT': {'used_balance': 6, 'leverage': 5, 'nominal_trade_size': 30}  # ⚠️ تصحيح
+        'SOLUSDT': {'used_balance': 6, 'leverage': 6, 'nominal_trade_size': 36},  # ⚠️ تصحيح  
+        'AVAXUSDT': {'used_balance': 6, 'leverage': 6, 'nominal_trade_size': 36}  # ⚠️ تصحيح
         },
         'max_active_trades': 2,  # زيادة الحد إلى 4 صفقات
         'data_interval': '5m',   # 5 دقائق لاستراتيجية EMA+RSI
