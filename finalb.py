@@ -312,14 +312,14 @@ class TradeManager:
         return symbol in self.active_trades
     
     def add_trade(self, trade_data):
-        self.active_trades['BNBUSDT'] = trade_data
+        self.active_trades['ETHUSDT'] = trade_data
     
     def remove_trade(self):
-        if 'BNBUSDT' in self.active_trades:
-            del self.active_trades['BNBUSDT']
+        if '،ETHUSDT' in self.active_trades:
+            del self.active_trades['ETHUSDT']
     
     def get_trade(self):
-        return self.active_trades.get('BNBUSDT')
+        return self.active_trades.get('ETHUSDT')
     
     def get_all_trades(self):
         return self.active_trades.copy()
@@ -871,7 +871,7 @@ class ScalpingTradingBot:
 
     def scan_market(self):
         """مسح السوق للعثور على فرص السكالبينج"""
-        logger.info("🔍 بدء مسح السوق لـ BNB...")
+        logger.info("🔍 بدء مسح السوق لـ ETH...")
         
         try:
             data_1h = self.get_historical_data(self.TRADING_SETTINGS['data_interval_1h'])
@@ -886,13 +886,13 @@ class ScalpingTradingBot:
             
             signal = self.signal_generator.generate_signal(data_1h, data_15m, current_price)
             if signal:
-                logger.info(f"🎯 تم العثور على إشارة BNB: {signal['direction']} (ثقة: {signal['confidence']:.2%})")
+                logger.info(f"🎯 تم العثور على إشارة ETH: {signal['direction']} (ثقة: {signal['confidence']:.2%})")
                 return signal
             
             return None
             
         except Exception as e:
-            logger.error(f"❌ خطأ في تحليل BNB: {e}")
+            logger.error(f"❌ خطأ في تحليل ETH: {e}")
             return None
 
     def execute_trading_cycle(self):
@@ -902,7 +902,7 @@ class ScalpingTradingBot:
             signal = self.scan_market()
             
             if signal and self.execute_trade(signal):
-                logger.info("✅ تم تنفيذ صفقة BNB بنجاح")
+                logger.info("✅ تم تنفيذ صفقة ETH بنجاح")
             
             elapsed_time = time.time() - start_time
             wait_time = (self.TRADING_SETTINGS['rescan_interval_minutes'] * 60) - elapsed_time
