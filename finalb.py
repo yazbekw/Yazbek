@@ -409,7 +409,7 @@ class ScalpingTradingBot:
         'max_active_trades': 2,
         'data_interval': '5m',
         'rescan_interval_minutes': 5,  # زيادة إلى 5 دقائق
-        'min_signal_confidence': 0.85,  # زيادة الحد الأدنى للثقة
+        'min_signal_confidence': 0.83,  # زيادة الحد الأدنى للثقة
         'max_daily_trades': 30,
         'cooldown_after_loss': 30,  # زيادة التبريد إلى 30 دقيقة
     }
@@ -509,7 +509,7 @@ class ScalpingTradingBot:
         """التحقق من ساعات التداول (8 صباحاً - 8 مساءً UTC)"""
         utc_time = datetime.now(pytz.UTC)
         hour = utc_time.hour
-        return 8 <= hour <= 20  # جلسات لندن/نيويورك
+        return 6 <= hour <= 22  # جلسات لندن/نيويورك
 
     def can_open_trade(self, symbol, direction):
         """التحقق من إمكانية فتح صفقة"""
