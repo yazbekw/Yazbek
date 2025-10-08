@@ -385,12 +385,11 @@ class ScalpingTradingBot:
     _instance = None
     
     TRADING_SETTINGS = {
-        'symbols': ["ETHUSDT", "BNBUSDT", "DOTUSDT", "LINKUSDT"],  # العملات المضافة
+        'symbols': ["ETHUSDT", "SOLUSDT", "AVAXUSDT"],  # العملات المضافة
         'symbol_settings': {
         'ETHUSDT': {'used_balance': 8, 'leverage': 5, 'nominal_trade_size': 40},  # ✅
-        'BNBUSDT': {'used_balance': 8, 'leverage': 5, 'nominal_trade_size': 40},  # ⚠️ تصحيح
-        'DOTUSDT': {'used_balance': 6, 'leverage': 5, 'nominal_trade_size': 30},  # ⚠️ تصحيح  
-        'LINKUSDT': {'used_balance': 6, 'leverage': 5, 'nominal_trade_size': 30}  # ⚠️ تصحيح
+        'SOLSDT': {'used_balance': 6, 'leverage': 5, 'nominal_trade_size': 30},  # ⚠️ تصحيح  
+        'AVAXUSDT': {'used_balance': 6, 'leverage': 5, 'nominal_trade_size': 30}  # ⚠️ تصحيح
         },
         'max_active_trades': 2,  # زيادة الحد إلى 4 صفقات
         'data_interval': '5m',   # 5 دقائق لاستراتيجية EMA+RSI
