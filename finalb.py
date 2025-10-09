@@ -82,7 +82,7 @@ class MA_RSI_SignalGenerator:
     
     def __init__(self):
         self.min_confidence = 0.70  # زيادة الحد الأدنى للثقة
-        self.min_conditions = 4     # زيادة عدد الشروط المطلوبة
+        self.min_conditions = 5     # زيادة عدد الشروط المطلوبة
     
     def generate_signal(self, data, current_price, symbol):
         """توليد إشارة سكالبينج باستراتيجية EMA + RSI"""
@@ -410,7 +410,7 @@ class ScalpingTradingBot:
         'max_active_trades': 2,
         'data_interval': '5m',
         'rescan_interval_minutes': 5,  # زيادة إلى 5 دقائق
-        'min_signal_confidence': 0.83,  # زيادة الحد الأدنى للثقة
+        'min_signal_confidence': 0.70,  # زيادة الحد الأدنى للثقة
         'max_daily_trades': 30,
         'cooldown_after_loss': 30,  # زيادة التبريد إلى 30 دقيقة
     }
