@@ -81,7 +81,7 @@ class MA_RSI_SignalGenerator:
     """مولد إشارات السكالبينج باستراتيجية المتوسطات المتحركة + RSI"""
     
     def __init__(self):
-        self.min_confidence = 0.70  # زيادة الحد الأدنى للثقة
+        self.min_confidence = 0.65  # زيادة الحد الأدنى للثقة
         self.min_conditions = 5     # زيادة عدد الشروط المطلوبة
     
     def generate_signal(self, data, current_price, symbol):
