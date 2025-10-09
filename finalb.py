@@ -81,7 +81,7 @@ class MA_RSI_SignalGenerator:
     """مولد إشارات السكالبينج باستراتيجية المتوسطات المتحركة + RSI"""
     
     def __init__(self):
-        self.min_confidence = 0.85  # زيادة الحد الأدنى للثقة
+        self.min_confidence = 0.80  # زيادة الحد الأدنى للثقة
         self.min_conditions = 5     # زيادة عدد الشروط المطلوبة
     
     def generate_signal(self, data, current_price, symbol):
@@ -402,9 +402,10 @@ class ScalpingTradingBot:
     _instance = None
     
     TRADING_SETTINGS = {
-        'symbols': ["ETHUSDT"],
+        'symbols': ["ETHUSDT","SOLUSDT"],
         'symbol_settings': {
-            'ETHUSDT': {'used_balance': 5.5, 'leverage': 9, 'nominal_trade_size': 40},
+            'ETHUSDT': {'used_balance': 5.5, 'leverage': 9, 'nominal_trade_size': 49.5},
+            'SOLUSDT': {'used_balance': 5.5, 'leverage': 9, 'nominal_trade_size': 48.5},
         },
         'max_active_trades': 2,
         'data_interval': '5m',
