@@ -670,51 +670,51 @@ class BNBScalpingBot:
         """الدالة الرئيسية لتشغيل البوت"""
         if not await self.initialize():
             return
-        
+    
         logging.info("Starting trading bot...")
-        
+    
         # تشغيل المهام المتزامنة
         tasks = [
             asyncio.create_task(self.daily_report()),
         ]
-        
+    
         try:
             while self.is_running:
                 # فحص صحي كل 5 دقائق
                 if not await self.health_check():
                     await asyncio.sleep(60)
                     continue
-                
+            
                 # إذا كانت هناك صفقة مفتوحة، انتقل للدورة التالية
                 if self.open_position:
                     await asyncio.sleep(30)
                     continue
-                
+            
                 # الحصول على البيانات وتحليلها
                 df = self.get_ohlc_data()
                 signals = self.analyze_signals(df)
-                
+            
                 if signals:
                     logging.info(f"Signals - EMA Fast: {signals['ema_fast']:.4f}, EMA Slow: {signals['ema_slow']:.4f}, RSI: {signals['rsi']:.2f}, Price: {signals['price']:.4f}")
-                    
-                    # التحقق من صحة السعر قبل التداول
-                    if signals['price'] <= 0:
-                        logging.error(f"Invalid signal price: {signals['price']}")
-                        await asyncio.sleep(60)
-                        continue
-                    
-                    if signals['long_signal'] and not self.open_position:
-                        await self.execute_trade('LONG', signals['price'])
-                        # بدء مراقبة الصفقة الجديدة
-                        if self.open_position:
-                            tasks.append(asyncio.create_task(self.monitor_position()))
-                    
-                    elif signals['short_signal'] and not self.open_position:
-                        await self.execute_trade('SHORT', signals['price'])
-                        # بدء مراقبة الصفقة الجديدة
-                        if self.open_position:
-                            tasks.append(asyncio.create_task(self.monitor_position()))
                 
+                    # ✅ الحل: استخدام السعر الحالي المباشر من Binance
+                    current_price = self.get_current_price()
+                    logging.info(f"Current market price: {current_price}")
+                
+                    # ✅ التحقق النهائي من السعر
+                    if current_price > 0:
+                        if signals['long_signal'] and not self.open_position:
+                            await self.execute_trade('LONG', current_price)
+                            if self.open_position:
+                                tasks.append(asyncio.create_task(self.monitor_position()))
+                    
+                        elif signals['short_signal'] and not self.open_position:
+                            await self.execute_trade('SHORT', current_price)
+                            if self.open_position:
+                                tasks.append(asyncio.create_task(self.monitor_position()))
+                    else:
+                        logging.error(f"Invalid current price: {current_price}")
+            
                 # انتظر دقيقة قبل التحليل التالي
                 await asyncio.sleep(60)
                 
