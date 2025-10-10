@@ -81,6 +81,7 @@ class BNBScalpingBot:
         self.health_check_counter = 0
         self.last_price = 0
         self.symbol_info = None
+        self.initialized = False
         
         # وقت دمشق
         self.damascus_tz = pytz.timezone('Asia/Damascus')
@@ -89,6 +90,11 @@ class BNBScalpingBot:
 
     async def send_telegram_notification(self, message, level="info"):
         """إرسال اشعار تلغرام مع إيموجي حسب المستوى"""
+        # التحقق من أن Telegram bot مهيأ
+        if self.telegram_bot is None:
+            logging.error("Telegram bot not initialized - cannot send notification")
+            return
+        
         emojis = {
             "info": "ℹ️",
             "success": "✅", 
@@ -114,6 +120,8 @@ class BNBScalpingBot:
             logging.info(f"Telegram notification sent: {message}")
         except TelegramError as e:
             logging.error(f"Failed to send Telegram notification: {e}")
+        except Exception as e:
+            logging.error(f"Unexpected error sending Telegram notification: {e}")
 
     async def get_symbol_info(self):
         """الحصول على معلومات الزوج لتحديد الدقة"""
@@ -174,49 +182,75 @@ class BNBScalpingBot:
             else:
                 logging.error(f"Telegram error: {e}")
                 return False
+        except Exception as e:
+            logging.error(f"Unexpected error validating chat ID: {e}")
+            return False
 
     async def initialize(self):
         """تهيئة الاتصالات"""
         try:
+            # التحقق من وجود جميع المتغيرات البيئية
+            if not all([self.api_key, self.api_secret, self.telegram_token, self.telegram_chat_id]):
+                error_msg = "❌ متغيرات بيئية مفقودة. يرجى التحقق من BINANCE_API_KEY, BINANCE_API_SECRET, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID"
+                logging.error(error_msg)
+                return False
+
             await self.send_telegram_notification("🚀 بدء تهيئة البوت...", "info")
             
             # Binance Client
-            self.client = Client(self.api_key, self.api_secret, testnet=False)
-            await self.send_telegram_notification("✅ تم الاتصال بـ Binance بنجاح", "success")
+            try:
+                self.client = Client(self.api_key, self.api_secret, testnet=False)
+                await self.send_telegram_notification("✅ تم الاتصال بـ Binance بنجاح", "success")
+            except Exception as e:
+                error_msg = f"❌ فشل الاتصال بـ Binance: {str(e)}"
+                await self.send_telegram_notification(error_msg, "error")
+                return False
             
             # Telegram Bot
-            self.telegram_bot = Bot(token=self.telegram_token)
-            await self.send_telegram_notification("✅ تم الاتصال بـ Telegram بنجاح", "success")
+            try:
+                self.telegram_bot = Bot(token=self.telegram_token)
+                # اختبار اتصال Telegram
+                await self.telegram_bot.get_me()
+                await self.send_telegram_notification("✅ تم الاتصال بـ Telegram بنجاح", "success")
+            except Exception as e:
+                error_msg = f"❌ فشل الاتصال بـ Telegram: {str(e)}"
+                logging.error(error_msg)
+                return False
             
             # التحقق من صحة معرف الدردشة
             if not await self.validate_chat_id():
                 return False
             
             # تعيين الرافعة المالية
-            self.client.futures_change_leverage(symbol=self.symbol, leverage=self.leverage)
-            await self.send_telegram_notification(f"⚡ تم تعيين الرافعة المالية: {self.leverage}x", "success")
+            try:
+                self.client.futures_change_leverage(symbol=self.symbol, leverage=self.leverage)
+                await self.send_telegram_notification(f"⚡ تم تعيين الرافعة المالية: {self.leverage}x", "success")
+            except Exception as e:
+                error_msg = f"⚠️ تحذير: فشل تعيين الرافعة المالية: {str(e)}"
+                await self.send_telegram_notification(error_msg, "warning")
             
             # الحصول على معلومات الزوج مسبقاً
             await self.get_symbol_info()
             
             # الحصول على معلومات الحساب الكاملة
-            account_info = self.client.futures_account()
-            
-            # البحث عن رصيد USDT الصحيح
-            usdt_balance = 0
-            for asset in account_info['assets']:
-                if asset['asset'] == 'USDT':
-                    usdt_balance = float(asset['walletBalance'])
-                    break
-            
-            # استخدام الرصيد المتاح للتداول
-            available_balance = float(account_info['availableBalance'])
-            total_wallet_balance = float(account_info['totalWalletBalance'])
-            
-            # الحصول على السعر الحالي للتحقق
-            current_price = self.get_current_price()
-            
-            await self.send_telegram_notification(f"""
+            try:
+                account_info = self.client.futures_account()
+                
+                # البحث عن رصيد USDT الصحيح
+                usdt_balance = 0
+                for asset in account_info['assets']:
+                    if asset['asset'] == 'USDT':
+                        usdt_balance = float(asset['walletBalance'])
+                        break
+                
+                # استخدام الرصيد المتاح للتداول
+                available_balance = float(account_info['availableBalance'])
+                total_wallet_balance = float(account_info['totalWalletBalance'])
+                
+                # الحصول على السعر الحالي للتحقق
+                current_price = self.get_current_price()
+                
+                await self.send_telegram_notification(f"""
 📈 **بوت التداول بدأ العمل بنجاح!** 📈
 • **الرصيد الإجمالي:** {total_wallet_balance:.2f} USDT 💰
 • **الرصيد المتاح:** {available_balance:.2f} USDT 💵
@@ -225,15 +259,23 @@ class BNBScalpingBot:
 • **الرافعة المالية:** {self.leverage}x ⚙️
 • **الوقف المتحرك:** {'🟢 مفعل' if self.trailing_stop else '🔴 غير مفعل'} 🔄
 • **زمن التشغيل:** {datetime.now(self.damascus_tz).strftime('%Y-%m-%d %H:%M:%S')} ⏰
-            """, "success")
+                """, "success")
+                
+                logging.info(f"Bot initialized successfully - Total Balance: {total_wallet_balance}, Available: {available_balance}, Current Price: {current_price}")
+                
+            except Exception as e:
+                error_msg = f"⚠️ تحذير: فشل الحصول على معلومات الحساب: {str(e)}"
+                await self.send_telegram_notification(error_msg, "warning")
             
-            logging.info(f"Bot initialized successfully - Total Balance: {total_wallet_balance}, Available: {available_balance}, Current Price: {current_price}")
+            self.initialized = True
             return True
             
         except Exception as e:
             error_msg = f"❌ خطأ في التهيئة: {str(e)}"
-            await self.send_telegram_notification(error_msg, "error")
             logging.error(f"Initialization error: {e}")
+            # محاولة إرسال رسالة خطأ عبر Telegram إذا كان متصلاً
+            if self.telegram_bot:
+                await self.send_telegram_notification(error_msg, "error")
             return False
     
     def calculate_ema(self, data, period):
@@ -303,6 +345,10 @@ class BNBScalpingBot:
     def get_current_price(self):
         """الحصول على السعر الحالي"""
         try:
+            if self.client is None:
+                logging.error("Binance client not initialized")
+                return 0
+                
             ticker = self.client.futures_symbol_ticker(symbol=self.symbol)
             price = float(ticker['price'])
             if price <= 0:
@@ -724,6 +770,7 @@ class BNBScalpingBot:
     async def run_bot(self):
         """الدالة الرئيسية لتشغيل البوت"""
         if not await self.initialize():
+            logging.error("Failed to initialize bot. Stopping...")
             return
     
         logging.info("Starting trading bot...")
@@ -748,6 +795,10 @@ class BNBScalpingBot:
             
                 # الحصول على البيانات وتحليلها
                 df = await self.get_ohlc_data()
+                if df is None:
+                    await asyncio.sleep(60)
+                    continue
+                    
                 signals = await self.analyze_signals(df)
             
                 if signals:
