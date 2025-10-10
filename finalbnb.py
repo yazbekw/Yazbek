@@ -87,18 +87,50 @@ class BNBScalpingBot:
         
         logging.info(f"الوقف المتحرك: {'مفعل' if self.trailing_stop else 'غير مفعل'}")
 
+    async def send_telegram_notification(self, message, level="info"):
+        """إرسال اشعار تلغرام مع إيموجي حسب المستوى"""
+        emojis = {
+            "info": "ℹ️",
+            "success": "✅", 
+            "warning": "⚠️",
+            "error": "❌",
+            "buy": "🟢",
+            "sell": "🔴",
+            "analysis": "📊",
+            "monitoring": "👀",
+            "execution": "⚡",
+            "market": "📈"
+        }
+        
+        emoji = emojis.get(level, "📢")
+        formatted_message = f"{emoji} {message}"
+        
+        try:
+            await self.telegram_bot.send_message(
+                chat_id=self.telegram_chat_id,
+                text=formatted_message,
+                parse_mode='Markdown'
+            )
+            logging.info(f"Telegram notification sent: {message}")
+        except TelegramError as e:
+            logging.error(f"Failed to send Telegram notification: {e}")
+
     def get_symbol_info(self):
         """الحصول على معلومات الزوج لتحديد الدقة"""
         try:
             if self.symbol_info is None:
+                await self.send_telegram_notification("🔍 جاري الحصول على معلومات الزوج...", "market")
                 info = self.client.futures_exchange_info()
                 for symbol in info['symbols']:
                     if symbol['symbol'] == self.symbol:
                         self.symbol_info = symbol
+                        await self.send_telegram_notification("✅ تم تحميل معلومات الزوج بنجاح", "success")
                         logging.info(f"Symbol info loaded: {symbol['symbol']}")
                         break
             return self.symbol_info
         except Exception as e:
+            error_msg = f"❌ خطأ في الحصول على معلومات الزوج: {str(e)}"
+            await self.send_telegram_notification(error_msg, "error")
             logging.error(f"Error getting symbol info: {e}")
             return None
 
@@ -131,16 +163,13 @@ class BNBScalpingBot:
         """التحقق من صحة معرف الدردشة"""
         try:
             # محاولة إرسال رسالة اختبار
-            await self.telegram_bot.send_message(
-                chat_id=self.telegram_chat_id,
-                text="🔍 اختبار اتصال البوت...",
-                parse_mode='Markdown'
-            )
+            await self.send_telegram_notification("🔍 اختبار اتصال البوت...", "info")
             logging.info("✅ Chat ID is valid")
             return True
         except TelegramError as e:
             if "bots can't send messages to bots" in str(e):
-                logging.error("❌ Chat ID belongs to another bot - cannot send messages")
+                error_msg = "❌ معرف الدردشة ينتمي لبوت آخر - البوتات لا يمكنها إرسال رسائل لبوتات أخرى"
+                await self.send_telegram_notification(error_msg, "error")
                 return False
             else:
                 logging.error(f"Telegram error: {e}")
@@ -149,25 +178,23 @@ class BNBScalpingBot:
     async def initialize(self):
         """تهيئة الاتصالات"""
         try:
+            await self.send_telegram_notification("🚀 بدء تهيئة البوت...", "info")
+            
             # Binance Client
             self.client = Client(self.api_key, self.api_secret, testnet=False)
+            await self.send_telegram_notification("✅ تم الاتصال بـ Binance بنجاح", "success")
             
             # Telegram Bot
             self.telegram_bot = Bot(token=self.telegram_token)
+            await self.send_telegram_notification("✅ تم الاتصال بـ Telegram بنجاح", "success")
             
             # التحقق من صحة معرف الدردشة
             if not await self.validate_chat_id():
-                error_msg = """
-❌ **خطأ في إعدادات Telegram!**
-• معرف الدردشة ينتمي لبوت آخر
-• البوتات لا يمكنها إرسال رسائل لبوتات أخرى
-• يرجى تحديث TELEGRAM_CHAT_ID بمعرف المستخدم الصحيح
-                """
-                logging.error(error_msg)
                 return False
             
             # تعيين الرافعة المالية
             self.client.futures_change_leverage(symbol=self.symbol, leverage=self.leverage)
+            await self.send_telegram_notification(f"⚡ تم تعيين الرافعة المالية: {self.leverage}x", "success")
             
             # الحصول على معلومات الزوج مسبقاً
             self.get_symbol_info()
@@ -189,7 +216,7 @@ class BNBScalpingBot:
             # الحصول على السعر الحالي للتحقق
             current_price = self.get_current_price()
             
-            await self.send_telegram_message(f"""
+            await self.send_telegram_notification(f"""
 📈 **بوت التداول بدأ العمل بنجاح!** 📈
 • **الرصيد الإجمالي:** {total_wallet_balance:.2f} USDT 💰
 • **الرصيد المتاح:** {available_balance:.2f} USDT 💵
@@ -198,12 +225,14 @@ class BNBScalpingBot:
 • **الرافعة المالية:** {self.leverage}x ⚙️
 • **الوقف المتحرك:** {'🟢 مفعل' if self.trailing_stop else '🔴 غير مفعل'} 🔄
 • **زمن التشغيل:** {datetime.now(self.damascus_tz).strftime('%Y-%m-%d %H:%M:%S')} ⏰
-            """)
+            """, "success")
             
             logging.info(f"Bot initialized successfully - Total Balance: {total_wallet_balance}, Available: {available_balance}, Current Price: {current_price}")
             return True
             
         except Exception as e:
+            error_msg = f"❌ خطأ في التهيئة: {str(e)}"
+            await self.send_telegram_notification(error_msg, "error")
             logging.error(f"Initialization error: {e}")
             return False
     
@@ -240,6 +269,8 @@ class BNBScalpingBot:
     def get_ohlc_data(self, limit=100):
         """الحصول على بيانات OHLC"""
         try:
+            await self.send_telegram_notification("📊 جاري جمع بيانات السوق...", "market")
+            
             klines = self.client.futures_klines(
                 symbol=self.symbol,
                 interval=self.timeframe,
@@ -259,9 +290,13 @@ class BNBScalpingBot:
             
             df = df.dropna()
             
+            await self.send_telegram_notification(f"✅ تم جمع {len(df)} شمعة من بيانات السوق", "market")
+            
             return df
             
         except Exception as e:
+            error_msg = f"❌ خطأ في جمع بيانات السوق: {str(e)}"
+            await self.send_telegram_notification(error_msg, "error")
             logging.error(f"Error getting OHLC data: {e}")
             return None
     
@@ -283,6 +318,8 @@ class BNBScalpingBot:
         """تحليل الإشارات بناءً على الاستراتيجية"""
         if df is None or len(df) < 50:
             return None
+        
+        await self.send_telegram_notification("🔍 جاري تحليل الإشارات...", "analysis")
         
         # حساب المؤشرات
         df['ema_fast'] = self.calculate_ema(df['close'], self.ema_fast)
@@ -308,6 +345,13 @@ class BNBScalpingBot:
             current['rsi'] > 50 and
             current['close'] > current['open']):
             signals['long_signal'] = True
+            await self.send_telegram_notification(f"""
+🟢 **إشارة شراء تم اكتشافها!**
+• EMA السريع: {current['ema_fast']:.4f} ↗️
+• EMA البطيء: {current['ema_slow']:.4f} ↘️  
+• RSI: {current['rsi']:.2f} 📊
+• السعر: {current['close']:.4f} USD 💲
+            """, "buy")
             
         # إشارة بيع (Short)
         elif (current['ema_fast'] < current['ema_slow'] and 
@@ -315,6 +359,15 @@ class BNBScalpingBot:
               current['rsi'] < 50 and
               current['close'] < current['open']):
             signals['short_signal'] = True
+            await self.send_telegram_notification(f"""
+🔴 **إشارة بيع تم اكتشافها!**
+• EMA السريع: {current['ema_fast']:.4f} ↘️
+• EMA البطيء: {current['ema_slow']:.4f} ↗️
+• RSI: {current['rsi']:.2f} 📊
+• السعر: {current['close']:.4f} USD 💲
+            """, "sell")
+        else:
+            await self.send_telegram_notification("⏸️ لا توجد إشارات تداول حالياً", "info")
             
         return signals
     
@@ -322,14 +375,16 @@ class BNBScalpingBot:
         """تنفيذ صفقة"""
         try:
             if self.consecutive_losses >= self.max_consecutive_losses:
-                await self.send_telegram_message("🛑 **توقف التداول!** 3 خسائر متتالية. يرجى التحقق يدويًا. ⚠️")
+                await self.send_telegram_notification("🛑 **توقف التداول!** 3 خسائر متتالية. يرجى التحقق يدويًا.", "warning")
                 return None
             
             # التحقق من صحة السعر
             if price <= 0:
                 logging.error(f"Invalid price for trade: {price}")
-                await self.send_telegram_message(f"❌ **سعر غير صالح للتداول!** ⚠️\nالسعر: {price}")
+                await self.send_telegram_notification(f"❌ **سعر غير صالح للتداول!** السعر: {price}", "error")
                 return None
+            
+            await self.send_telegram_notification(f"⚡ محاولة تنفيذ صفقة {signal_type}...", "execution")
             
             # حساب الكمية مع الضبط
             raw_quantity = self.trade_amount / price
@@ -337,7 +392,7 @@ class BNBScalpingBot:
             
             if raw_quantity <= 0:
                 logging.error(f"Invalid raw quantity: {raw_quantity}")
-                await self.send_telegram_message(f"❌ **الكمية غير صالحة!** ⚠️\nالكمية المحسوبة: {raw_quantity}")
+                await self.send_telegram_notification(f"❌ **الكمية غير صالحة!** الكمية المحسوبة: {raw_quantity}", "error")
                 return None
             
             quantity = self.adjust_quantity(raw_quantity)
@@ -345,7 +400,7 @@ class BNBScalpingBot:
             # التحقق النهائي من الكمية
             if quantity <= 0:
                 logging.error(f"Adjusted quantity is invalid: {quantity}")
-                await self.send_telegram_message(f"❌ **الكمية المعدلة غير صالحة!** ⚠️\nالكمية: {quantity}")
+                await self.send_telegram_notification(f"❌ **الكمية المعدلة غير صالحة!** الكمية: {quantity}", "error")
                 return None
 
             # التحقق من الحد الأدنى للكمية
@@ -356,7 +411,7 @@ class BNBScalpingBot:
                     min_qty = float(quantity_filter['minQty'])
                     if quantity < min_qty:
                         logging.error(f"Quantity below minimum: {quantity} < {min_qty}")
-                        await self.send_telegram_message(f"❌ **الكمية أقل من المسموح!** ⚠️\nالكمية: {quantity} < الحد الأدنى: {min_qty}")
+                        await self.send_telegram_notification(f"❌ **الكمية أقل من المسموح!** الكمية: {quantity} < الحد الأدنى: {min_qty}", "error")
                         return None
 
             if signal_type == 'LONG':
@@ -402,25 +457,27 @@ class BNBScalpingBot:
 • **الرافعة:** {self.leverage}x ⚙️
             """
             
-            await self.send_telegram_message(message)
+            await self.send_telegram_notification(message, "success")
             logging.info(f"New {signal_type} trade executed at {price} with quantity {quantity}")
             
             return order
             
         except BinanceAPIException as e:
-            error_msg = f"❌ **خطأ في تنفيذ الصفقة!** ⚠️\nالتفاصيل: {str(e)}"
+            error_msg = f"❌ **خطأ في تنفيذ الصفقة!** التفاصيل: {str(e)}"
             if "Precision" in str(e):
                 error_msg += "\n🔧 **تم تعديل الدقة تلقائياً، جاري إعادة المحاولة...**"
                 logging.error(f"Precision error, retrying with adjusted quantity: {e}")
-            await self.send_telegram_message(error_msg)
+            await self.send_telegram_notification(error_msg, "error")
             return None
         except Exception as e:
             logging.error(f"Trade execution error: {e}")
-            await self.send_telegram_message(f"❌ **خطأ في تنفيذ الصفقة!** ⚠️\nالتفاصيل: {str(e)}")
+            await self.send_telegram_notification(f"❌ **خطأ في تنفيذ الصفقة!** التفاصيل: {str(e)}", "error")
             return None
 
     async def monitor_position(self):
         """مراقبة الصفقة المفتوحة مع الوقف المتحرك الديناميكي"""
+        await self.send_telegram_notification("👀 بدء مراقبة الصفقة المفتوحة...", "monitoring")
+        
         while self.open_position and self.is_running:
             try:
                 current_price = self.get_current_price()
@@ -461,8 +518,9 @@ class BNBScalpingBot:
                         if new_stop > position['stop_loss']:
                             position['stop_loss'] = new_stop
                             logging.info(f"🔄 تحديث الوقف المتحرك للشراء: {new_stop:.4f} (ATR: {atr:.4f})")
-                            await self.send_telegram_message(
-                                f"🔄 **تحديث الوقف المتحرك للشراء!** 🔄\n• **الوقف الجديد:** {new_stop:.4f} USD 🛑\n• **ATR الحالي:** {atr:.4f} 📊\n• **السعر الحالي:** {current_price:.4f} USD 💲"
+                            await self.send_telegram_notification(
+                                f"🔄 **تحديث الوقف المتحرك للشراء!** 🔄\n• **الوقف الجديد:** {new_stop:.4f} USD 🛑\n• **ATR الحالي:** {atr:.4f} 📊\n• **السعر الحالي:** {current_price:.4f} USD 💲",
+                                "monitoring"
                             )
 
                     elif position['side'] == 'SHORT' and current_price < position['entry_price']:
@@ -470,8 +528,9 @@ class BNBScalpingBot:
                         if new_stop < position['stop_loss']:
                             position['stop_loss'] = new_stop
                             logging.info(f"🔄 تحديث الوقف المتحرك للبيع: {new_stop:.4f} (ATR: {atr:.4f})")
-                            await self.send_telegram_message(
-                                f"🔄 **تحديث الوقف المتحرك للبيع!** 🔄\n• **الوقف الجديد:** {new_stop:.4f} USD 🛑\n• **ATR الحالي:** {atr:.4f} 📊\n• **السعر الحالي:** {current_price:.4f} USD 💲"
+                            await self.send_telegram_notification(
+                                f"🔄 **تحديث الوقف المتحرك للبيع!** 🔄\n• **الوقف الجديد:** {new_stop:.4f} USD 🛑\n• **ATR الحالي:** {atr:.4f} 📊\n• **السعر الحالي:** {current_price:.4f} USD 💲",
+                                "monitoring"
                             )
 
                 # التحقق من وقف الخسارة وجني الربح
@@ -501,6 +560,7 @@ class BNBScalpingBot:
                     close_reason = "انتهاء الوقت"
                 
                 if should_close:
+                    await self.send_telegram_notification(f"📋 سبب إغلاق الصفقة: {close_reason}", "monitoring")
                     await self.close_position(current_price, close_reason)
                     break
                 
@@ -508,6 +568,7 @@ class BNBScalpingBot:
                 
             except Exception as e:
                 logging.error(f"Position monitoring error: {e}")
+                await self.send_telegram_notification(f"❌ خطأ في مراقبة الصفقة: {str(e)}", "error")
                 await asyncio.sleep(30)
 
     async def close_position(self, exit_price, reason=""):
@@ -519,6 +580,8 @@ class BNBScalpingBot:
                 side = Client.SIDE_SELL
             else:
                 side = Client.SIDE_BUY
+            
+            await self.send_telegram_notification("🔄 جاري إغلاق الصفقة...", "execution")
             
             order = self.client.futures_create_order(
                 symbol=self.symbol,
@@ -564,20 +627,22 @@ class BNBScalpingBot:
 • **المدة:** {str(time_in_position).split('.')[0]} ⏱️
             """
             
-            await self.send_telegram_message(message)
+            await self.send_telegram_notification(message, "success" if pnl_usd > 0 else "error")
             logging.info(f"Position closed with PnL: {pnl_usd:.2f} USD, Reason: {reason}")
             
             self.open_position = None
             
         except Exception as e:
             logging.error(f"Position closing error: {e}")
-            await self.send_telegram_message(f"❌ **خطأ في إغلاق الصفقة!** ⚠️\nالتفاصيل: {str(e)}")
+            await self.send_telegram_notification(f"❌ **خطأ في إغلاق الصفقة!** التفاصيل: {str(e)}", "error")
     
     async def health_check(self):
         """فحص صحي للبوت"""
         self.health_check_counter += 1
         
         try:
+            await self.send_telegram_notification("🏥 جاري الفحص الصحي للبوت...", "info")
+            
             # التحقق من اتصال Binance
             self.client.futures_exchange_info()
             
@@ -601,14 +666,15 @@ class BNBScalpingBot:
 • **الخسائر المتتالية:** {self.consecutive_losses} ⚠️
 • **الوقت الحالي:** {datetime.now(self.damascus_tz).strftime('%H:%M:%S')} ⏰
                 """
-                await self.send_telegram_message(status_message)
+                await self.send_telegram_notification(status_message, "info")
                 logging.info("Health check passed")
             
+            await self.send_telegram_notification("✅ الفحص الصحي تم بنجاح", "success")
             return True
             
         except Exception as e:
-            error_msg = f"❌ **فحص صحي فاشل!** ⚠️\nالتفاصيل: {str(e)}\nيرجى التحقق من الاتصال أو الإعدادات."
-            await self.send_telegram_message(error_msg)
+            error_msg = f"❌ **فحص صحي فاشل!** التفاصيل: {str(e)}\nيرجى التحقق من الاتصال أو الإعدادات."
+            await self.send_telegram_notification(error_msg, "error")
             logging.error(f"Health check failed: {e}")
             return False
     
@@ -658,7 +724,7 @@ class BNBScalpingBot:
 **التاريخ:** {datetime.now(self.damascus_tz).strftime('%Y-%m-%d %H:%M:%S')} ⏰
             """
             
-            await self.send_telegram_message(report)
+            await self.send_telegram_notification(report, "info")
             
             # إعادة تعيين الإحصائيات اليومية
             self.daily_trades = 0
@@ -672,6 +738,7 @@ class BNBScalpingBot:
             return
     
         logging.info("Starting trading bot...")
+        await self.send_telegram_notification("🚀 بدء تشغيل بوت التداول...", "info")
     
         # تشغيل المهام المتزامنة
         tasks = [
@@ -714,23 +781,24 @@ class BNBScalpingBot:
                                 tasks.append(asyncio.create_task(self.monitor_position()))
                     else:
                         logging.error(f"Invalid current price: {current_price}")
+                        await self.send_telegram_notification(f"❌ سعر حالي غير صالح: {current_price}", "error")
             
                 # انتظر دقيقة قبل التحليل التالي
                 await asyncio.sleep(60)
                 
         except KeyboardInterrupt:
             logging.info("Bot stopped by user")
-            await self.send_telegram_message("🛑 **البوت توقف بواسطة المستخدم!** ⏹️")
+            await self.send_telegram_notification("🛑 **البوت توقف بواسطة المستخدم!**", "warning")
         except Exception as e:
             logging.error(f"Bot error: {e}")
-            await self.send_telegram_message(f"🆘 **البوت توقف بسبب خطأ!** ⚠️\nالتفاصيل: {str(e)}")
+            await self.send_telegram_notification(f"🆘 **البوت توقف بسبب خطأ!** التفاصيل: {str(e)}", "error")
         finally:
             self.is_running = False
             # إلغاء جميع المهام
             for task in tasks:
                 task.cancel()
             
-            await self.send_telegram_message("🛑 **البوت توقف عن العمل!** ⏹️")
+            await self.send_telegram_notification("🛑 **البوت توقف عن العمل!**", "warning")
 
 async def main():
     """الدالة الرئيسية"""
