@@ -115,7 +115,7 @@ class BNBScalpingBot:
         except TelegramError as e:
             logging.error(f"Failed to send Telegram notification: {e}")
 
-    def get_symbol_info(self):
+    async def get_symbol_info(self):
         """الحصول على معلومات الزوج لتحديد الدقة"""
         try:
             if self.symbol_info is None:
@@ -134,10 +134,10 @@ class BNBScalpingBot:
             logging.error(f"Error getting symbol info: {e}")
             return None
 
-    def adjust_quantity(self, quantity):
+    async def adjust_quantity(self, quantity):
         """ضبط الكمية حسب الدقة المسموحة"""
         try:
-            symbol_info = self.get_symbol_info()
+            symbol_info = await self.get_symbol_info()
             if symbol_info:
                 # الحصول على دقة الكمية
                 quantity_filter = next((f for f in symbol_info['filters'] if f['filterType'] == 'LOT_SIZE'), None)
@@ -197,7 +197,7 @@ class BNBScalpingBot:
             await self.send_telegram_notification(f"⚡ تم تعيين الرافعة المالية: {self.leverage}x", "success")
             
             # الحصول على معلومات الزوج مسبقاً
-            self.get_symbol_info()
+            await self.get_symbol_info()
             
             # الحصول على معلومات الحساب الكاملة
             account_info = self.client.futures_account()
@@ -266,7 +266,7 @@ class BNBScalpingBot:
             logging.error(f"Error calculating ATR: {e}")
             return 0
     
-    def get_ohlc_data(self, limit=100):
+    async def get_ohlc_data(self, limit=100):
         """الحصول على بيانات OHLC"""
         try:
             await self.send_telegram_notification("📊 جاري جمع بيانات السوق...", "market")
@@ -314,7 +314,7 @@ class BNBScalpingBot:
             logging.error(f"Error getting current price: {e}")
             return 0
     
-    def analyze_signals(self, df):
+    async def analyze_signals(self, df):
         """تحليل الإشارات بناءً على الاستراتيجية"""
         if df is None or len(df) < 50:
             return None
@@ -395,7 +395,7 @@ class BNBScalpingBot:
                 await self.send_telegram_notification(f"❌ **الكمية غير صالحة!** الكمية المحسوبة: {raw_quantity}", "error")
                 return None
             
-            quantity = self.adjust_quantity(raw_quantity)
+            quantity = await self.adjust_quantity(raw_quantity)
             
             # التحقق النهائي من الكمية
             if quantity <= 0:
@@ -404,7 +404,7 @@ class BNBScalpingBot:
                 return None
 
             # التحقق من الحد الأدنى للكمية
-            symbol_info = self.get_symbol_info()
+            symbol_info = await self.get_symbol_info()
             if symbol_info:
                 quantity_filter = next((f for f in symbol_info['filters'] if f['filterType'] == 'LOT_SIZE'), None)
                 if quantity_filter:
@@ -499,7 +499,7 @@ class BNBScalpingBot:
                 # تطبيق الوقف المتحرك إذا كان مفعلاً
                 if self.trailing_stop and trailing_active:
                     # الحصول على بيانات OHLC لحساب ATR
-                    df = self.get_ohlc_data(limit=50)
+                    df = await self.get_ohlc_data(limit=50)
                     if df is None:
                         await asyncio.sleep(10)
                         continue
@@ -678,17 +678,6 @@ class BNBScalpingBot:
             logging.error(f"Health check failed: {e}")
             return False
     
-    async def send_telegram_message(self, message):
-        """إرسال رسالة عبر Telegram"""
-        try:
-            await self.telegram_bot.send_message(
-                chat_id=self.telegram_chat_id,
-                text=message,
-                parse_mode='Markdown'
-            )
-        except TelegramError as e:
-            logging.error(f"Telegram error: {e}")
-    
     async def daily_report(self):
         """تقرير يومي الساعة 23 بتوقيت دمشق"""
         while self.is_running:
@@ -758,8 +747,8 @@ class BNBScalpingBot:
                     continue
             
                 # الحصول على البيانات وتحليلها
-                df = self.get_ohlc_data()
-                signals = self.analyze_signals(df)
+                df = await self.get_ohlc_data()
+                signals = await self.analyze_signals(df)
             
                 if signals:
                     logging.info(f"Signals - EMA Fast: {signals['ema_fast']:.4f}, EMA Slow: {signals['ema_slow']:.4f}, RSI: {signals['rsi']:.2f}, Price: {signals['price']:.4f}")
