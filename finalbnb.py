@@ -97,19 +97,31 @@ class BNBScalpingBot:
             # تعيين الرافعة المالية
             self.client.futures_change_leverage(symbol=self.symbol, leverage=self.leverage)
             
-            # الحصول على رصيد الحساب
-            balance_info = self.client.futures_account_balance()
-            usdt_balance = next((item for item in balance_info if item['asset'] == 'USDT'), None)
+            # الحصول على معلومات الحساب الكاملة - التحديث هنا
+            account_info = self.client.futures_account()
+            
+            # البحث عن رصيد USDT الصحيح
+            usdt_balance = 0
+            for asset in account_info['assets']:
+                if asset['asset'] == 'USDT':
+                    usdt_balance = float(asset['walletBalance'])
+                    break
+            
+            # استخدام الرصيد المتاح للتداول
+            available_balance = float(account_info['availableBalance'])
+            total_wallet_balance = float(account_info['totalWalletBalance'])
             
             await self.send_telegram_message(f"""
 📈 **بوت التداول بدأ العمل بنجاح!** 📈
-• **الرصيد المتاح:** {float(usdt_balance['balance']):.2f} USDT 💰
+• **الرصيد الإجمالي:** {total_wallet_balance:.2f} USDT 💰
+• **الرصيد المتاح:** {available_balance:.2f} USDT 💵
+• **رصيد المحفظة:** {usdt_balance:.2f} USDT 💳
 • **الرافعة المالية:** {self.leverage}x ⚙️
 • **الوقف المتحرك:** {'🟢 مفعل' if self.trailing_stop else '🔴 غير مفعل'} 🔄
 • **زمن التشغيل:** {datetime.now(self.damascus_tz).strftime('%Y-%m-%d %H:%M:%S')} ⏰
             """)
             
-            logging.info("Bot initialized successfully")
+            logging.info(f"Bot initialized successfully - Total Balance: {total_wallet_balance}, Available: {available_balance}")
             return True
             
         except Exception as e:
@@ -414,6 +426,9 @@ class BNBScalpingBot:
             result_text = "ربح" if pnl_usd > 0 else "خسارة"
             trailing_info = " (مع وقف متحرك ديناميكي)" if self.trailing_stop else ""
             
+            # حساب المدة
+            time_in_position = datetime.now() - position['timestamp']
+            
             message = f"""
 {emoji} **صفقة مغلقة{trailing_info}!** {emoji}
 • **السبب:** {reason} 📌
@@ -446,9 +461,10 @@ class BNBScalpingBot:
             # التحقق من اتصال Telegram
             await self.telegram_bot.get_me()
             
-            # التحقق من الرصيد
-            balance_info = self.client.futures_account_balance()
-            usdt_balance = next((item for item in balance_info if item['asset'] == 'USDT'), None)
+            # التحقق من الرصيد - التحديث هنا
+            account_info = self.client.futures_account()
+            available_balance = float(account_info['availableBalance'])
+            total_wallet_balance = float(account_info['totalWalletBalance'])
             
             # إرسال تقرير صحي كل 6 ساعات
             if self.health_check_counter % 72 == 0:  # كل 6 ساعات (12 فحص × 6 = 72)
@@ -456,7 +472,8 @@ class BNBScalpingBot:
 🏥 **فحص صحي للبوت:** 🏥
 • **اتصال Binance:** ✅ متصل
 • **اتصال Telegram:** ✅ متصل  
-• **الرصيد المتاح:** {float(usdt_balance['balance']):.2f} USDT 💰
+• **الرصيد الإجمالي:** {total_wallet_balance:.2f} USDT 💰
+• **الرصيد المتاح:** {available_balance:.2f} USDT 💵
 • **الصفقات النشطة:** {'1 (نشطة)' if self.open_position else '0 (لا صفقات نشطة)'} 📊
 • **الخسائر المتتالية:** {self.consecutive_losses} ⚠️
 • **الوقت الحالي:** {datetime.now(self.damascus_tz).strftime('%H:%M:%S')} ⏰
@@ -478,7 +495,7 @@ class BNBScalpingBot:
             await self.telegram_bot.send_message(
                 chat_id=self.telegram_chat_id,
                 text=message,
-                parse_mode='Markdown'  # استخدام Markdown لتنسيق أفضل
+                parse_mode='Markdown'
             )
         except TelegramError as e:
             logging.error(f"Telegram error: {e}")
@@ -495,13 +512,14 @@ class BNBScalpingBot:
             wait_seconds = (target_time - now).total_seconds()
             await asyncio.sleep(wait_seconds)
             
-            # الحصول على الرصيد الحالي
+            # الحصول على الرصيد الحالي - التحديث هنا
             try:
-                balance_info = self.client.futures_account_balance()
-                usdt_balance = next((item for item in balance_info if item['asset'] == 'USDT'), None)
-                current_balance = float(usdt_balance['balance'])
+                account_info = self.client.futures_account()
+                available_balance = float(account_info['availableBalance'])
+                total_wallet_balance = float(account_info['totalWalletBalance'])
             except:
-                current_balance = 0
+                available_balance = 0
+                total_wallet_balance = 0
             
             # إرسال التقرير اليومي
             report = f"""
@@ -509,7 +527,8 @@ class BNBScalpingBot:
 • **عدد الصفقات:** {self.daily_trades} 📊
 • **إجمالي الربح/الخسارة:** {self.daily_profit:.2f} USD 💰
 • **الخسائر المتتالية:** {self.consecutive_losses} ⚠️
-• **الرصيد الحالي:** {current_balance:.2f} USDT 💲
+• **الرصيد الإجمالي:** {total_wallet_balance:.2f} USDT 💰
+• **الرصيد المتاح:** {available_balance:.2f} USDT 💵
 • **الوقف المتحرك:** {'🟢 مفعل' if self.trailing_stop else '🔴 غير مفعل'} 🔄
 • **حالة البوت:** {'🟢 نشط' if self.is_running else '🔴 متوقف'} 📡
 
