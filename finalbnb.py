@@ -63,8 +63,11 @@ class BNBScalpingBot:
         self.take_profit = 0.008  # 0.8%
         self.stop_loss = 0.005   # 0.5%
         
-        # تفعيل الوقف المتحرك
+        # إعدادات الوقف المتحرك
         self.trailing_stop = enable_trailing_stop()
+        self.atr_period = 14  # فترة ATR
+        self.atr_multiplier = 1.0  # مضاعف ATR للوقف المتحرك
+        self.trailing_activation_profit = 0.3  # نسبة الربح الأولي لتفعيل الوقف المتحرك (%)
         
         # حالة البوت
         self.client = None
@@ -99,11 +102,11 @@ class BNBScalpingBot:
             usdt_balance = next((item for item in balance_info if item['asset'] == 'USDT'), None)
             
             await self.send_telegram_message(f"""
-🤖 بوت التداول بدأ العمل بنجاح!
-• الرصيد: {float(usdt_balance['balance']):.2f} USDT
-• الرافعة: {self.leverage}x
-• الوقف المتحرك: {'🟢 مفعل' if self.trailing_stop else '🔴 غير مفعل'}
-• زمن التشغيل: {datetime.now(self.damascus_tz).strftime('%Y-%m-%d %H:%M:%S')}
+📈 **بوت التداول بدأ العمل بنجاح!** 📈
+• **الرصيد المتاح:** {float(usdt_balance['balance']):.2f} USDT 💰
+• **الرافعة المالية:** {self.leverage}x ⚙️
+• **الوقف المتحرك:** {'🟢 مفعل' if self.trailing_stop else '🔴 غير مفعل'} 🔄
+• **زمن التشغيل:** {datetime.now(self.damascus_tz).strftime('%Y-%m-%d %H:%M:%S')} ⏰
             """)
             
             logging.info("Bot initialized successfully")
@@ -129,6 +132,19 @@ class BNBScalpingBot:
         rs = avg_gain / avg_loss
         rsi = 100 - (100 / (1 + rs))
         return rsi
+    
+    def calculate_atr(self, df, period=14):
+        """حساب Average True Range (ATR)"""
+        try:
+            high_low = df['high'] - df['low']
+            high_close = abs(df['high'] - df['close'].shift())
+            low_close = abs(df['low'] - df['close'].shift())
+            true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+            atr = true_range.rolling(window=period).mean()
+            return atr.iloc[-1]  # إرجاع آخر قيمة ATR
+        except Exception as e:
+            logging.error(f"Error calculating ATR: {e}")
+            return 0
     
     def get_ohlc_data(self, limit=100):
         """الحصول على بيانات OHLC"""
@@ -210,7 +226,7 @@ class BNBScalpingBot:
         """تنفيذ صفقة"""
         try:
             if self.consecutive_losses >= self.max_consecutive_losses:
-                await self.send_telegram_message("🛑 توقف التداول بعد 3 خسائر متتالية!")
+                await self.send_telegram_message("🛑 **توقف التداول!** 3 خسائر متتالية. يرجى التحقق يدويًا. ⚠️")
                 return None
             
             # حساب الكمية
@@ -245,16 +261,17 @@ class BNBScalpingBot:
                 'timestamp': datetime.now()
             }
             
-            trailing_info = " (مع وقف متحرك)" if self.trailing_stop else ""
+            trailing_info = " (مع وقف متحرك ديناميكي)" if self.trailing_stop else ""
             
             message = f"""
-🎯 صفقة جديدة{trailing_info}:
-• النوع: {signal_type}
-• السعر: {price:.4f}
-• الكمية: {quantity}
-• وقف الخسارة: {stop_price:.4f}
-• جني الربح: {take_profit_price:.4f}
-• الوقت: {datetime.now(self.damascus_tz).strftime('%H:%M:%S')}
+🎯 **صفقة جديدة مفتوحة{trailing_info}!** 🎯
+• **النوع:** {signal_type} 📊
+• **سعر الدخول:** {price:.4f} USD 💲
+• **الكمية:** {quantity} BNB 📦
+• **وقف الخسارة:** {stop_price:.4f} USD 🛑
+• **جني الربح:** {take_profit_price:.4f} USD ✅
+• **الوقت:** {datetime.now(self.damascus_tz).strftime('%H:%M:%S')} ⏰
+• **الرافعة:** {self.leverage}x ⚙️
             """
             
             await self.send_telegram_message(message)
@@ -264,38 +281,68 @@ class BNBScalpingBot:
             
         except Exception as e:
             logging.error(f"Trade execution error: {e}")
-            await self.send_telegram_message(f"❌ خطأ في تنفيذ الصفقة: {e}")
+            await self.send_telegram_message(f"❌ **خطأ في تنفيذ الصفقة!** ⚠️\nالتفاصيل: {str(e)}")
             return None
 
     async def monitor_position(self):
-        """مراقبة الصفقة المفتوحة مع الوقف المتحرك"""
+        """مراقبة الصفقة المفتوحة مع الوقف المتحرك الديناميكي"""
         while self.open_position and self.is_running:
             try:
                 current_price = self.get_current_price()
                 if current_price == 0:
                     await asyncio.sleep(10)
                     continue
-                    
+
                 position = self.open_position
-                
+
+                # حساب نسبة الربح/الخسارة الحالية
+                if position['side'] == 'LONG':
+                    profit_percent = (current_price - position['entry_price']) / position['entry_price'] * 100
+                else:  # SHORT
+                    profit_percent = (position['entry_price'] - current_price) / position['entry_price'] * 100
+
+                # تفعيل الوقف المتحرك فقط إذا تحقق ربح أولي 0.3%
+                trailing_active = profit_percent >= self.trailing_activation_profit
+
                 # تطبيق الوقف المتحرك إذا كان مفعلاً
-                if self.trailing_stop:
+                if self.trailing_stop and trailing_active:
+                    # الحصول على بيانات OHLC لحساب ATR
+                    df = self.get_ohlc_data(limit=50)
+                    if df is None:
+                        await asyncio.sleep(10)
+                        continue
+
+                    # حساب ATR
+                    atr = self.calculate_atr(df, period=self.atr_period)
+                    if atr == 0:
+                        await asyncio.sleep(10)
+                        continue
+
+                    # تعديل الوقف المتحرك بناءً على ATR (مثل 1x ATR)
+                    dynamic_stop = atr * self.atr_multiplier
+
                     if position['side'] == 'LONG' and current_price > position['entry_price']:
-                        new_stop = current_price * (1 - self.stop_loss)
+                        new_stop = current_price - dynamic_stop
                         if new_stop > position['stop_loss']:
                             position['stop_loss'] = new_stop
-                            logging.info(f"🔄 تحديث الوقف المتحرك للشراء: {new_stop:.4f}")
-                    
+                            logging.info(f"🔄 تحديث الوقف المتحرك للشراء: {new_stop:.4f} (ATR: {atr:.4f})")
+                            await self.send_telegram_message(
+                                f"🔄 **تحديث الوقف المتحرك للشراء!** 🔄\n• **الوقف الجديد:** {new_stop:.4f} USD 🛑\n• **ATR الحالي:** {atr:.4f} 📊\n• **السعر الحالي:** {current_price:.4f} USD 💲"
+                            )
+
                     elif position['side'] == 'SHORT' and current_price < position['entry_price']:
-                        new_stop = current_price * (1 + self.stop_loss)
+                        new_stop = current_price + dynamic_stop
                         if new_stop < position['stop_loss']:
                             position['stop_loss'] = new_stop
-                            logging.info(f"🔄 تحديث الوقف المتحرك للبيع: {new_stop:.4f}")
-                
+                            logging.info(f"🔄 تحديث الوقف المتحرك للبيع: {new_stop:.4f} (ATR: {atr:.4f})")
+                            await self.send_telegram_message(
+                                f"🔄 **تحديث الوقف المتحرك للبيع!** 🔄\n• **الوقف الجديد:** {new_stop:.4f} USD 🛑\n• **ATR الحالي:** {atr:.4f} 📊\n• **السعر الحالي:** {current_price:.4f} USD 💲"
+                            )
+
                 # التحقق من وقف الخسارة وجني الربح
                 should_close = False
                 close_reason = ""
-                
+
                 if position['side'] == 'LONG':
                     if current_price <= position['stop_loss']:
                         should_close = True
@@ -364,18 +411,19 @@ class BNBScalpingBot:
             
             # إرسال إشعار مع سبب الإغلاق
             emoji = "✅" if pnl_usd > 0 else "❌"
-            trailing_info = " (مع وقف متحرك)" if self.trailing_stop else ""
+            result_text = "ربح" if pnl_usd > 0 else "خسارة"
+            trailing_info = " (مع وقف متحرك ديناميكي)" if self.trailing_stop else ""
             
             message = f"""
-{emoji} صفقة مغلقة{trailing_info}:
-• السبب: {reason}
-• النوع: {position['side']}
-• سعر الدخول: {position['entry_price']:.4f}
-• سعر الخروج: {exit_price:.4f}
-• النتيجة: {'ربح' if pnl_usd > 0 else 'خسارة'}
-• المبلغ: {pnl_usd:.2f} دولار ({pnl_percent:.2f}%)
-• الخسائر المتتالية: {self.consecutive_losses}
-• المدة: {str(datetime.now() - position['timestamp']).split('.')[0]}
+{emoji} **صفقة مغلقة{trailing_info}!** {emoji}
+• **السبب:** {reason} 📌
+• **النوع:** {position['side']} 📊
+• **سعر الدخول:** {position['entry_price']:.4f} USD 💲
+• **سعر الخروج:** {exit_price:.4f} USD 💲
+• **النتيجة:** {result_text} 📈
+• **المبلغ:** {pnl_usd:.2f} USD ({pnl_percent:.2f}%) 💰
+• **الخسائر المتتالية:** {self.consecutive_losses} ⚠️
+• **المدة:** {str(time_in_position).split('.')[0]} ⏱️
             """
             
             await self.send_telegram_message(message)
@@ -385,7 +433,7 @@ class BNBScalpingBot:
             
         except Exception as e:
             logging.error(f"Position closing error: {e}")
-            await self.send_telegram_message(f"❌ خطأ في إغلاق الصفقة: {e}")
+            await self.send_telegram_message(f"❌ **خطأ في إغلاق الصفقة!** ⚠️\nالتفاصيل: {str(e)}")
     
     async def health_check(self):
         """فحص صحي للبوت"""
@@ -405,13 +453,13 @@ class BNBScalpingBot:
             # إرسال تقرير صحي كل 6 ساعات
             if self.health_check_counter % 72 == 0:  # كل 6 ساعات (12 فحص × 6 = 72)
                 status_message = f"""
-🏥 فحص صحي:
-• اتصال Binance: ✅
-• اتصال Telegram: ✅  
-• الرصيد: {float(usdt_balance['balance']):.2f} USDT
-• الصفقات النشطة: {'1' if self.open_position else '0'}
-• الخسائر المتتالية: {self.consecutive_losses}
-• الوقت: {datetime.now(self.damascus_tz).strftime('%H:%M:%S')}
+🏥 **فحص صحي للبوت:** 🏥
+• **اتصال Binance:** ✅ متصل
+• **اتصال Telegram:** ✅ متصل  
+• **الرصيد المتاح:** {float(usdt_balance['balance']):.2f} USDT 💰
+• **الصفقات النشطة:** {'1 (نشطة)' if self.open_position else '0 (لا صفقات نشطة)'} 📊
+• **الخسائر المتتالية:** {self.consecutive_losses} ⚠️
+• **الوقت الحالي:** {datetime.now(self.damascus_tz).strftime('%H:%M:%S')} ⏰
                 """
                 await self.send_telegram_message(status_message)
                 logging.info("Health check passed")
@@ -419,7 +467,7 @@ class BNBScalpingBot:
             return True
             
         except Exception as e:
-            error_msg = f"❌ فحص صحي فاشل: {e}"
+            error_msg = f"❌ **فحص صحي فاشل!** ⚠️\nالتفاصيل: {str(e)}\nيرجى التحقق من الاتصال أو الإعدادات."
             await self.send_telegram_message(error_msg)
             logging.error(f"Health check failed: {e}")
             return False
@@ -430,7 +478,7 @@ class BNBScalpingBot:
             await self.telegram_bot.send_message(
                 chat_id=self.telegram_chat_id,
                 text=message,
-                parse_mode='HTML'
+                parse_mode='Markdown'  # استخدام Markdown لتنسيق أفضل
             )
         except TelegramError as e:
             logging.error(f"Telegram error: {e}")
@@ -457,16 +505,15 @@ class BNBScalpingBot:
             
             # إرسال التقرير اليومي
             report = f"""
-📊 التقرير اليومي:
+📊 **التقرير اليومي للتداول:** 📊
+• **عدد الصفقات:** {self.daily_trades} 📊
+• **إجمالي الربح/الخسارة:** {self.daily_profit:.2f} USD 💰
+• **الخسائر المتتالية:** {self.consecutive_losses} ⚠️
+• **الرصيد الحالي:** {current_balance:.2f} USDT 💲
+• **الوقف المتحرك:** {'🟢 مفعل' if self.trailing_stop else '🔴 غير مفعل'} 🔄
+• **حالة البوت:** {'🟢 نشط' if self.is_running else '🔴 متوقف'} 📡
 
-• عدد الصفقات: {self.daily_trades}
-• إجمالي الربح: {self.daily_profit:.2f} دولار
-• الخسائر المتتالية: {self.consecutive_losses}
-• الرصيد الحالي: {current_balance:.2f} USDT
-• الوقف المتحرك: {'🟢 مفعل' if self.trailing_stop else '🔴 غير مفعل'}
-• حالة البوت: {'🟢 نشط' if self.is_running else '🔴 متوقف'}
-
-التاريخ: {datetime.now(self.damascus_tz).strftime('%Y-%m-%d %H:%M:%S')}
+**التاريخ:** {datetime.now(self.damascus_tz).strftime('%Y-%m-%d %H:%M:%S')} ⏰
             """
             
             await self.send_telegram_message(report)
@@ -523,17 +570,17 @@ class BNBScalpingBot:
                 
         except KeyboardInterrupt:
             logging.info("Bot stopped by user")
-            await self.send_telegram_message("🛑 البوت توقف بواسطة المستخدم")
+            await self.send_telegram_message("🛑 **البوت توقف بواسطة المستخدم!** ⏹️")
         except Exception as e:
             logging.error(f"Bot error: {e}")
-            await self.send_telegram_message(f"🆘 البوت توقف بسبب خطأ: {e}")
+            await self.send_telegram_message(f"🆘 **البوت توقف بسبب خطأ!** ⚠️\nالتفاصيل: {str(e)}")
         finally:
             self.is_running = False
             # إلغاء جميع المهام
             for task in tasks:
                 task.cancel()
             
-            await self.send_telegram_message("🛑 البوت توقف عن العمل")
+            await self.send_telegram_message("🛑 **البوت توقف عن العمل!** ⏹️")
 
 async def main():
     """الدالة الرئيسية"""
