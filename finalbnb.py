@@ -7,11 +7,13 @@ import pytz
 import pandas as pd
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
-from binance.websockets import BinanceSocketManager
 from telegram import Bot
 from telegram.error import TelegramError
 import numpy as np
 import requests
+from flask import Flask
+import schedule
+import threading
 
 # إعدادات التسجيل
 logging.basicConfig(
@@ -23,21 +25,21 @@ logging.basicConfig(
     ]
 )
 
+# تطبيق Flask للحفاظ على تشغيل البوت على Render
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "🤖 بوت تداول BNB يعمل بنجاح!"
+
+@app.route('/health')
+def health():
+    return "✅ البوت في حالة صحية جيدة"
+
 def enable_trailing_stop():
-    """سؤال المستخدم إذا كان يريد تفعيل الوقف المتحرك"""
-    # على Render لن يعمل input، لذا نستخدم متغير بيئي أو نفعله افتراضيًا
+    """تفعيل الوقف المتحرك عبر متغير البيئة"""
     trailing_env = os.getenv('ENABLE_TRAILING_STOP', 'false').lower()
-    if trailing_env == 'true':
-        return True
-    elif trailing_env == 'false':
-        return False
-    else:
-        # لو كان التشغيل محليًا
-        try:
-            response = input("هل تريد تفعيل الوقف المتحرك؟ (y/n): ")
-            return response.lower() == 'y'
-        except:
-            return False  # افتراضي غير مفعل على Render
+    return trailing_env == 'true'
 
 class BNBScalpingBot:
     def __init__(self):
@@ -73,6 +75,7 @@ class BNBScalpingBot:
         self.daily_profit = 0
         self.open_position = None
         self.health_check_counter = 0
+        self.last_price = 0
         
         # وقت دمشق
         self.damascus_tz = pytz.timezone('Asia/Damascus')
@@ -117,9 +120,13 @@ class BNBScalpingBot:
     def calculate_rsi(self, data, period=14):
         """حساب مؤشر RSI"""
         delta = data.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-        rs = gain / loss
+        gain = (delta.where(delta > 0, 0)).fillna(0)
+        loss = (-delta.where(delta < 0, 0)).fillna(0)
+        
+        avg_gain = gain.rolling(window=period).mean()
+        avg_loss = loss.rolling(window=period).mean()
+        
+        rs = avg_gain / avg_loss
         rsi = 100 - (100 / (1 + rs))
         return rsi
     
@@ -138,16 +145,27 @@ class BNBScalpingBot:
                 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'
             ])
             
-            df['close'] = pd.to_numeric(df['close'])
-            df['high'] = pd.to_numeric(df['high'])
-            df['low'] = pd.to_numeric(df['low'])
-            df['open'] = pd.to_numeric(df['open'])
+            # تحويل الأعمدة إلى أرقام
+            numeric_columns = ['open', 'high', 'low', 'close', 'volume']
+            for col in numeric_columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            df = df.dropna()
             
             return df
             
         except Exception as e:
             logging.error(f"Error getting OHLC data: {e}")
             return None
+    
+    def get_current_price(self):
+        """الحصول على السعر الحالي"""
+        try:
+            ticker = self.client.futures_symbol_ticker(symbol=self.symbol)
+            return float(ticker['price'])
+        except Exception as e:
+            logging.error(f"Error getting current price: {e}")
+            return 0
     
     def analyze_signals(self, df):
         """تحليل الإشارات بناءً على الاستراتيجية"""
@@ -253,7 +271,11 @@ class BNBScalpingBot:
         """مراقبة الصفقة المفتوحة مع الوقف المتحرك"""
         while self.open_position and self.is_running:
             try:
-                current_price = float(self.client.futures_symbol_ticker(symbol=self.symbol)['price'])
+                current_price = self.get_current_price()
+                if current_price == 0:
+                    await asyncio.sleep(10)
+                    continue
+                    
                 position = self.open_position
                 
                 # تطبيق الوقف المتحرك إذا كان مفعلاً
@@ -518,6 +540,11 @@ async def main():
     bot = BNBScalpingBot()
     await bot.run_bot()
 
+def run_flask():
+    """تشغيل Flask في thread منفصل"""
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
+
 if __name__ == "__main__":
     # التحقق من وجود المتغيرات البيئية
     required_env_vars = ['BINANCE_API_KEY', 'BINANCE_API_SECRET', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID']
@@ -530,6 +557,10 @@ if __name__ == "__main__":
     
     print("🚀 بدء تشغيل بوت التداول...")
     print("⏰ الوقت الحالي في دمشق:", datetime.now(pytz.timezone('Asia/Damascus')).strftime('%Y-%m-%d %H:%M:%S'))
+    
+    # تشغيل Flask في thread منفصل
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
     
     # تشغيل البوت
     try:
