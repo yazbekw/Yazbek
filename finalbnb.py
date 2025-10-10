@@ -123,49 +123,112 @@ class BNBScalpingBot:
         except Exception as e:
             logging.error(f"Unexpected error sending Telegram notification: {e}")
 
-    async def get_symbol_info(self):
-        """الحصول على معلومات الزوج لتحديد الدقة"""
+    def get_futures_precision(self, symbol):
+        """الحصول على معلومات الدقة من Binance - مثل الكود المرفق"""
         try:
-            if self.symbol_info is None:
-                await self.send_telegram_notification("🔍 جاري الحصول على معلومات الزوج...", "market")
-                info = self.client.futures_exchange_info()
-                for symbol in info['symbols']:
-                    if symbol['symbol'] == self.symbol:
-                        self.symbol_info = symbol
-                        await self.send_telegram_notification("✅ تم تحميل معلومات الزوج بنجاح", "success")
-                        logging.info(f"Symbol info loaded: {symbol['symbol']}")
-                        break
-            return self.symbol_info
-        except Exception as e:
-            error_msg = f"❌ خطأ في الحصول على معلومات الزوج: {str(e)}"
-            await self.send_telegram_notification(error_msg, "error")
-            logging.error(f"Error getting symbol info: {e}")
-            return None
-
-    async def adjust_quantity(self, quantity):
-        """ضبط الكمية حسب الدقة المسموحة"""
-        try:
-            symbol_info = await self.get_symbol_info()
-            if symbol_info:
-                # الحصول على دقة الكمية
-                quantity_filter = next((f for f in symbol_info['filters'] if f['filterType'] == 'LOT_SIZE'), None)
-                if quantity_filter:
-                    step_size = float(quantity_filter['stepSize'])
-                    # تقريب الكمية حسب stepSize
-                    precision = int(round(-math.log(step_size, 10))) if step_size < 1 else 0
-                    adjusted_quantity = math.floor(quantity / step_size) * step_size
-                    adjusted_quantity = round(adjusted_quantity, precision)
-                    logging.info(f"Adjusted quantity: {quantity} -> {adjusted_quantity} (step: {step_size}, precision: {precision})")
-                    return adjusted_quantity
+            if self.client is None:
+                return self._get_default_precision()
+                
+            info = self.client.futures_exchange_info()
+            symbol_info = next((s for s in info['symbols'] if s['symbol'] == symbol), None)
             
-            # إذا لم نتمكن من الحصول على المعلومات، نستخدم دقة افتراضية
-            default_quantity = round(quantity, 3)
-            logging.info(f"Using default quantity: {default_quantity}")
-            return default_quantity
+            if symbol_info:
+                lot_size = next((f for f in symbol_info['filters'] if f['filterType'] == 'LOT_SIZE'), None)
+                price_filter = next((f for f in symbol_info['filters'] if f['filterType'] == 'PRICE_FILTER'), None)
+                min_notional_filter = next((f for f in symbol_info['filters'] if f['filterType'] == 'MIN_NOTIONAL'), None)
+                
+                min_notional = float(min_notional_filter['notional']) if min_notional_filter else 10.0
+                step_size = float(lot_size['stepSize']) if lot_size else 0.001
+                min_qty = float(lot_size['minQty']) if lot_size else 0.001
+                
+                precision = 0
+                if step_size < 1:
+                    precision = int(round(-math.log10(step_size)))
+                
+                return {
+                    'step_size': step_size,
+                    'tick_size': float(price_filter['tickSize']) if price_filter else 0.001,
+                    'precision': precision,
+                    'min_qty': min_qty,
+                    'min_notional': min_notional
+                }
+            
+            return self._get_default_precision()
+            
         except Exception as e:
-            logging.error(f"Error adjusting quantity: {e}")
-            default_quantity = round(quantity, 3)
-            return default_quantity
+            logging.error(f"Error getting futures precision: {e}")
+            return self._get_default_precision()
+
+    def _get_default_precision(self):
+        """القيم الافتراضية الآمنة"""
+        return {
+            'step_size': 0.001,
+            'tick_size': 0.001,
+            'precision': 3,
+            'min_qty': 0.001,
+            'min_notional': 10.0
+        }
+
+    def calculate_position_size(self, price):
+        """حساب حجم المركز - مثل الكود المرفق"""
+        try:
+            precision_info = self.get_futures_precision(self.symbol)
+            step_size = precision_info['step_size']
+            min_qty = precision_info['min_qty']
+            min_notional = precision_info['min_notional']
+            
+            # حساب الكمية الأساسية
+            raw_quantity = self.trade_amount / price
+            
+            # التحقق من الحد الأدنى للكمية
+            if raw_quantity < min_qty:
+                logging.warning(f"Raw quantity below minimum, adjusting: {raw_quantity} -> {min_qty}")
+                raw_quantity = min_qty
+            
+            # ضبط الكمية حسب step_size
+            if step_size > 0:
+                quantity = math.floor(raw_quantity / step_size) * step_size
+            else:
+                quantity = raw_quantity
+            
+            # التأكد من عدم تجاوز الحد الأدنى
+            if quantity < min_qty:
+                quantity = min_qty
+            
+            # التحقق من القيمة الاسمية
+            notional_value = quantity * price
+            if notional_value < min_notional:
+                # ضبط الكمية لتلبية الحد الأدنى للقيمة الاسمية
+                required_quantity = min_notional / price
+                if step_size > 0:
+                    quantity = math.floor(required_quantity / step_size) * step_size
+                else:
+                    quantity = required_quantity
+                
+                # التأكد من عدم تجاوز الحد الأدنى
+                if quantity < min_qty:
+                    quantity = min_qty
+                
+                logging.info(f"Adjusted quantity for min notional: {required_quantity} -> {quantity}")
+            
+            # التقريب النهائي
+            quantity = round(quantity, precision_info['precision'])
+            
+            # التحقق النهائي
+            if quantity <= 0:
+                logging.error(f"Final quantity is invalid: {quantity}, using minimum")
+                quantity = min_qty
+            
+            final_notional = quantity * price
+            logging.info(f"Position size calculated: Qty={quantity}, Price={price}, Notional={final_notional:.2f}, MinNotional={min_notional}")
+            
+            return quantity
+            
+        except Exception as e:
+            logging.error(f"Error calculating position size: {e}")
+            # استعادة آمنة
+            precision_info = self.get_futures_precision(self.symbol)
+            return precision_info['min_qty']
 
     async def validate_chat_id(self):
         """التحقق من صحة معرف الدردشة"""
@@ -229,8 +292,9 @@ class BNBScalpingBot:
                 error_msg = f"⚠️ تحذير: فشل تعيين الرافعة المالية: {str(e)}"
                 await self.send_telegram_notification(error_msg, "warning")
             
-            # الحصول على معلومات الزوج مسبقاً
-            await self.get_symbol_info()
+            # الحصول على معلومات الدقة
+            precision_info = self.get_futures_precision(self.symbol)
+            await self.send_telegram_notification(f"📏 دقة التداول: StepSize={precision_info['step_size']}, MinQty={precision_info['min_qty']}, MinNotional=${precision_info['min_notional']}", "info")
             
             # الحصول على معلومات الحساب الكاملة
             try:
@@ -286,12 +350,12 @@ class BNBScalpingBot:
         """حساب مؤشر RSI"""
         delta = data.diff()
         gain = (delta.where(delta > 0, 0)).fillna(0)
-        loss = (-delta.where(delta < 0, 0)).fillna(0)
+        loss = (-delta).where(delta < 0, 0).fillna(0)
         
         avg_gain = gain.rolling(window=period).mean()
         avg_loss = loss.rolling(window=period).mean()
         
-        rs = avg_gain / avg_loss
+        rs = avg_gain / (avg_loss + 1e-10)  # تجنب القسمة على الصفر
         rsi = 100 - (100 / (1 + rs))
         return rsi
     
@@ -303,16 +367,14 @@ class BNBScalpingBot:
             low_close = abs(df['low'] - df['close'].shift())
             true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
             atr = true_range.rolling(window=period).mean()
-            return atr.iloc[-1]  # إرجاع آخر قيمة ATR
+            return atr.iloc[-1] if len(atr) > 0 else 0
         except Exception as e:
             logging.error(f"Error calculating ATR: {e}")
             return 0
     
-    async def get_ohlc_data(self, limit=100):
+    def get_ohlc_data(self, limit=100):
         """الحصول على بيانات OHLC"""
         try:
-            await self.send_telegram_notification("📊 جاري جمع بيانات السوق...", "market")
-            
             klines = self.client.futures_klines(
                 symbol=self.symbol,
                 interval=self.timeframe,
@@ -332,13 +394,9 @@ class BNBScalpingBot:
             
             df = df.dropna()
             
-            await self.send_telegram_notification(f"✅ تم جمع {len(df)} شمعة من بيانات السوق", "market")
-            
             return df
             
         except Exception as e:
-            error_msg = f"❌ خطأ في جمع بيانات السوق: {str(e)}"
-            await self.send_telegram_notification(error_msg, "error")
             logging.error(f"Error getting OHLC data: {e}")
             return None
     
@@ -360,12 +418,10 @@ class BNBScalpingBot:
             logging.error(f"Error getting current price: {e}")
             return 0
     
-    async def analyze_signals(self, df):
+    def analyze_signals(self, df):
         """تحليل الإشارات بناءً على الاستراتيجية"""
         if df is None or len(df) < 50:
             return None
-        
-        await self.send_telegram_notification("🔍 جاري تحليل الإشارات...", "analysis")
         
         # حساب المؤشرات
         df['ema_fast'] = self.calculate_ema(df['close'], self.ema_fast)
@@ -391,13 +447,6 @@ class BNBScalpingBot:
             current['rsi'] > 50 and
             current['close'] > current['open']):
             signals['long_signal'] = True
-            await self.send_telegram_notification(f"""
-🟢 **إشارة شراء تم اكتشافها!**
-• EMA السريع: {current['ema_fast']:.4f} ↗️
-• EMA البطيء: {current['ema_slow']:.4f} ↘️  
-• RSI: {current['rsi']:.2f} 📊
-• السعر: {current['close']:.4f} USD 💲
-            """, "buy")
             
         # إشارة بيع (Short)
         elif (current['ema_fast'] < current['ema_slow'] and 
@@ -405,20 +454,11 @@ class BNBScalpingBot:
               current['rsi'] < 50 and
               current['close'] < current['open']):
             signals['short_signal'] = True
-            await self.send_telegram_notification(f"""
-🔴 **إشارة بيع تم اكتشافها!**
-• EMA السريع: {current['ema_fast']:.4f} ↘️
-• EMA البطيء: {current['ema_slow']:.4f} ↗️
-• RSI: {current['rsi']:.2f} 📊
-• السعر: {current['close']:.4f} USD 💲
-            """, "sell")
-        else:
-            await self.send_telegram_notification("⏸️ لا توجد إشارات تداول حالياً", "info")
             
         return signals
     
     async def execute_trade(self, signal_type, price):
-        """تنفيذ صفقة"""
+        """تنفيذ صفقة - باستخدام طريقة الكود المرفق"""
         try:
             if self.consecutive_losses >= self.max_consecutive_losses:
                 await self.send_telegram_notification("🛑 **توقف التداول!** 3 خسائر متتالية. يرجى التحقق يدويًا.", "warning")
@@ -432,33 +472,23 @@ class BNBScalpingBot:
             
             await self.send_telegram_notification(f"⚡ محاولة تنفيذ صفقة {signal_type}...", "execution")
             
-            # حساب الكمية مع الضبط
-            raw_quantity = self.trade_amount / price
-            logging.info(f"Raw quantity calculation: {self.trade_amount} / {price} = {raw_quantity}")
+            # حساب الكمية باستخدام الطريقة الآمنة من الكود المرفق
+            quantity = self.calculate_position_size(price)
             
-            if raw_quantity <= 0:
-                logging.error(f"Invalid raw quantity: {raw_quantity}")
-                await self.send_telegram_notification(f"❌ **الكمية غير صالحة!** الكمية المحسوبة: {raw_quantity}", "error")
-                return None
-            
-            quantity = await self.adjust_quantity(raw_quantity)
-            
-            # التحقق النهائي من الكمية
             if quantity <= 0:
-                logging.error(f"Adjusted quantity is invalid: {quantity}")
-                await self.send_telegram_notification(f"❌ **الكمية المعدلة غير صالحة!** الكمية: {quantity}", "error")
+                logging.error(f"Calculated quantity is invalid: {quantity}")
+                await self.send_telegram_notification(f"❌ **الكمية المحسوبة غير صالحة!** الكمية: {quantity}", "error")
                 return None
 
-            # التحقق من الحد الأدنى للكمية
-            symbol_info = await self.get_symbol_info()
-            if symbol_info:
-                quantity_filter = next((f for f in symbol_info['filters'] if f['filterType'] == 'LOT_SIZE'), None)
-                if quantity_filter:
-                    min_qty = float(quantity_filter['minQty'])
-                    if quantity < min_qty:
-                        logging.error(f"Quantity below minimum: {quantity} < {min_qty}")
-                        await self.send_telegram_notification(f"❌ **الكمية أقل من المسموح!** الكمية: {quantity} < الحد الأدنى: {min_qty}", "error")
-                        return None
+            # التحقق النهائي من القيمة الاسمية
+            precision_info = self.get_futures_precision(self.symbol)
+            notional_value = quantity * price
+            min_notional = precision_info['min_notional']
+            
+            if notional_value < min_notional:
+                logging.error(f"Notional value too low: {notional_value} < {min_notional}")
+                await self.send_telegram_notification(f"❌ **القيمة الاسمية أقل من المسموح!** القيمة: {notional_value:.2f} < الحد الأدنى: {min_notional}", "error")
+                return None
 
             if signal_type == 'LONG':
                 order = self.client.futures_create_order(
@@ -495,7 +525,7 @@ class BNBScalpingBot:
 🎯 **صفقة جديدة مفتوحة{trailing_info}!** 🎯
 • **النوع:** {signal_type} 📊
 • **سعر الدخول:** {price:.4f} USD 💲
-• **الكمية:** {quantity} BNB 📦
+• **الكمية:** {quantity:.6f} BNB 📦
 • **القيمة:** {quantity * price:.2f} USD 💰
 • **وقف الخسارة:** {stop_price:.4f} USD 🛑
 • **جني الربح:** {take_profit_price:.4f} USD ✅
@@ -510,9 +540,6 @@ class BNBScalpingBot:
             
         except BinanceAPIException as e:
             error_msg = f"❌ **خطأ في تنفيذ الصفقة!** التفاصيل: {str(e)}"
-            if "Precision" in str(e):
-                error_msg += "\n🔧 **تم تعديل الدقة تلقائياً، جاري إعادة المحاولة...**"
-                logging.error(f"Precision error, retrying with adjusted quantity: {e}")
             await self.send_telegram_notification(error_msg, "error")
             return None
         except Exception as e:
@@ -545,13 +572,13 @@ class BNBScalpingBot:
                 # تطبيق الوقف المتحرك إذا كان مفعلاً
                 if self.trailing_stop and trailing_active:
                     # الحصول على بيانات OHLC لحساب ATR
-                    df = await self.get_ohlc_data(limit=50)
+                    df = self.get_ohlc_data(limit=50)
                     if df is None:
                         await asyncio.sleep(10)
                         continue
 
                     # حساب ATR
-                    atr = self.calculate_atr(df, period=self.atr_period)
+                    atr = self.calculate_atr(df)
                     if atr == 0:
                         await asyncio.sleep(10)
                         continue
@@ -794,21 +821,21 @@ class BNBScalpingBot:
                     continue
             
                 # الحصول على البيانات وتحليلها
-                df = await self.get_ohlc_data()
+                df = self.get_ohlc_data()
                 if df is None:
                     await asyncio.sleep(60)
                     continue
                     
-                signals = await self.analyze_signals(df)
+                signals = self.analyze_signals(df)
             
                 if signals:
                     logging.info(f"Signals - EMA Fast: {signals['ema_fast']:.4f}, EMA Slow: {signals['ema_slow']:.4f}, RSI: {signals['rsi']:.2f}, Price: {signals['price']:.4f}")
                 
-                    # ✅ الحل: استخدام السعر الحالي المباشر من Binance
+                    # استخدام السعر الحالي المباشر من Binance
                     current_price = self.get_current_price()
                     logging.info(f"Current market price: {current_price}")
                 
-                    # ✅ التحقق النهائي من السعر
+                    # التحقق النهائي من السعر
                     if current_price > 0:
                         if signals['long_signal'] and not self.open_position:
                             await self.execute_trade('LONG', current_price)
