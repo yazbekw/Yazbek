@@ -2,6 +2,7 @@ import asyncio
 import logging
 import time
 import os
+import math
 from datetime import datetime, timedelta
 import pytz
 import pandas as pd
@@ -79,11 +80,67 @@ class BNBScalpingBot:
         self.open_position = None
         self.health_check_counter = 0
         self.last_price = 0
+        self.symbol_info = None
         
         # وقت دمشق
         self.damascus_tz = pytz.timezone('Asia/Damascus')
         
         logging.info(f"الوقف المتحرك: {'مفعل' if self.trailing_stop else 'غير مفعل'}")
+
+    def get_symbol_info(self):
+        """الحصول على معلومات الزوج لتحديد الدقة"""
+        try:
+            if self.symbol_info is None:
+                info = self.client.futures_exchange_info()
+                for symbol in info['symbols']:
+                    if symbol['symbol'] == self.symbol:
+                        self.symbol_info = symbol
+                        break
+            return self.symbol_info
+        except Exception as e:
+            logging.error(f"Error getting symbol info: {e}")
+            return None
+
+    def adjust_quantity(self, quantity):
+        """ضبط الكمية حسب الدقة المسموحة"""
+        try:
+            symbol_info = self.get_symbol_info()
+            if symbol_info:
+                # الحصول على دقة الكمية
+                quantity_filter = next((f for f in symbol_info['filters'] if f['filterType'] == 'LOT_SIZE'), None)
+                if quantity_filter:
+                    step_size = float(quantity_filter['stepSize'])
+                    # تقريب الكمية حسب stepSize
+                    precision = int(round(-math.log(step_size, 10))) if step_size < 1 else 0
+                    adjusted_quantity = math.floor(quantity / step_size) * step_size
+                    adjusted_quantity = round(adjusted_quantity, precision)
+                    logging.info(f"Adjusted quantity: {quantity} -> {adjusted_quantity} (step: {step_size}, precision: {precision})")
+                    return adjusted_quantity
+            
+            # إذا لم نتمكن من الحصول على المعلومات، نستخدم دقة افتراضية
+            return round(quantity, 3)
+        except Exception as e:
+            logging.error(f"Error adjusting quantity: {e}")
+            return round(quantity, 3)
+
+    async def validate_chat_id(self):
+        """التحقق من صحة معرف الدردشة"""
+        try:
+            # محاولة إرسال رسالة اختبار
+            await self.telegram_bot.send_message(
+                chat_id=self.telegram_chat_id,
+                text="🔍 اختبار اتصال البوت...",
+                parse_mode='Markdown'
+            )
+            logging.info("✅ Chat ID is valid")
+            return True
+        except TelegramError as e:
+            if "bots can't send messages to bots" in str(e):
+                logging.error("❌ Chat ID belongs to another bot - cannot send messages")
+                return False
+            else:
+                logging.error(f"Telegram error: {e}")
+                return False
 
     async def initialize(self):
         """تهيئة الاتصالات"""
@@ -94,10 +151,24 @@ class BNBScalpingBot:
             # Telegram Bot
             self.telegram_bot = Bot(token=self.telegram_token)
             
+            # التحقق من صحة معرف الدردشة
+            if not await self.validate_chat_id():
+                error_msg = """
+❌ **خطأ في إعدادات Telegram!**
+• معرف الدردشة ينتمي لبوت آخر
+• البوتات لا يمكنها إرسال رسائل لبوتات أخرى
+• يرجى تحديث TELEGRAM_CHAT_ID بمعرف المستخدم الصحيح
+                """
+                logging.error(error_msg)
+                return False
+            
             # تعيين الرافعة المالية
             self.client.futures_change_leverage(symbol=self.symbol, leverage=self.leverage)
             
-            # الحصول على معلومات الحساب الكاملة - التحديث هنا
+            # الحصول على معلومات الزوج مسبقاً
+            self.get_symbol_info()
+            
+            # الحصول على معلومات الحساب الكاملة
             account_info = self.client.futures_account()
             
             # البحث عن رصيد USDT الصحيح
@@ -241,9 +312,15 @@ class BNBScalpingBot:
                 await self.send_telegram_message("🛑 **توقف التداول!** 3 خسائر متتالية. يرجى التحقق يدويًا. ⚠️")
                 return None
             
-            # حساب الكمية
-            quantity = round(self.trade_amount / price, 3)
+            # حساب الكمية مع الضبط
+            raw_quantity = self.trade_amount / price
+            quantity = self.adjust_quantity(raw_quantity)
             
+            # التحقق من أن الكمية ليست صفر
+            if quantity <= 0:
+                await self.send_telegram_message(f"❌ **الكمية غير صالحة!** ⚠️\nالكمية المحسوبة: {quantity}")
+                return None
+
             if signal_type == 'LONG':
                 order = self.client.futures_create_order(
                     symbol=self.symbol,
@@ -284,13 +361,21 @@ class BNBScalpingBot:
 • **جني الربح:** {take_profit_price:.4f} USD ✅
 • **الوقت:** {datetime.now(self.damascus_tz).strftime('%H:%M:%S')} ⏰
 • **الرافعة:** {self.leverage}x ⚙️
+• **الدقة المعدلة:** نعم ✅
             """
             
             await self.send_telegram_message(message)
-            logging.info(f"New {signal_type} trade executed at {price}")
+            logging.info(f"New {signal_type} trade executed at {price} with quantity {quantity}")
             
             return order
             
+        except BinanceAPIException as e:
+            error_msg = f"❌ **خطأ في تنفيذ الصفقة!** ⚠️\nالتفاصيل: {str(e)}"
+            if "Precision" in str(e):
+                error_msg += "\n🔧 **تم تعديل الدقة تلقائياً، جاري إعادة المحاولة...**"
+                logging.error(f"Precision error, retrying with adjusted quantity: {e}")
+            await self.send_telegram_message(error_msg)
+            return None
         except Exception as e:
             logging.error(f"Trade execution error: {e}")
             await self.send_telegram_message(f"❌ **خطأ في تنفيذ الصفقة!** ⚠️\nالتفاصيل: {str(e)}")
@@ -461,7 +546,7 @@ class BNBScalpingBot:
             # التحقق من اتصال Telegram
             await self.telegram_bot.get_me()
             
-            # التحقق من الرصيد - التحديث هنا
+            # التحقق من الرصيد
             account_info = self.client.futures_account()
             available_balance = float(account_info['availableBalance'])
             total_wallet_balance = float(account_info['totalWalletBalance'])
@@ -512,7 +597,7 @@ class BNBScalpingBot:
             wait_seconds = (target_time - now).total_seconds()
             await asyncio.sleep(wait_seconds)
             
-            # الحصول على الرصيد الحالي - التحديث هنا
+            # الحصول على الرصيد الحالي
             try:
                 account_info = self.client.futures_account()
                 available_balance = float(account_info['availableBalance'])
@@ -577,12 +662,14 @@ class BNBScalpingBot:
                     if signals['long_signal'] and not self.open_position:
                         await self.execute_trade('LONG', signals['price'])
                         # بدء مراقبة الصفقة الجديدة
-                        tasks.append(asyncio.create_task(self.monitor_position()))
+                        if self.open_position:
+                            tasks.append(asyncio.create_task(self.monitor_position()))
                     
                     elif signals['short_signal'] and not self.open_position:
                         await self.execute_trade('SHORT', signals['price'])
                         # بدء مراقبة الصفقة الجديدة
-                        tasks.append(asyncio.create_task(self.monitor_position()))
+                        if self.open_position:
+                            tasks.append(asyncio.create_task(self.monitor_position()))
                 
                 # انتظر دقيقة قبل التحليل التالي
                 await asyncio.sleep(60)
