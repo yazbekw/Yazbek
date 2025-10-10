@@ -95,6 +95,7 @@ class BNBScalpingBot:
                 for symbol in info['symbols']:
                     if symbol['symbol'] == self.symbol:
                         self.symbol_info = symbol
+                        logging.info(f"Symbol info loaded: {symbol['symbol']}")
                         break
             return self.symbol_info
         except Exception as e:
@@ -118,10 +119,13 @@ class BNBScalpingBot:
                     return adjusted_quantity
             
             # إذا لم نتمكن من الحصول على المعلومات، نستخدم دقة افتراضية
-            return round(quantity, 3)
+            default_quantity = round(quantity, 3)
+            logging.info(f"Using default quantity: {default_quantity}")
+            return default_quantity
         except Exception as e:
             logging.error(f"Error adjusting quantity: {e}")
-            return round(quantity, 3)
+            default_quantity = round(quantity, 3)
+            return default_quantity
 
     async def validate_chat_id(self):
         """التحقق من صحة معرف الدردشة"""
@@ -182,17 +186,21 @@ class BNBScalpingBot:
             available_balance = float(account_info['availableBalance'])
             total_wallet_balance = float(account_info['totalWalletBalance'])
             
+            # الحصول على السعر الحالي للتحقق
+            current_price = self.get_current_price()
+            
             await self.send_telegram_message(f"""
 📈 **بوت التداول بدأ العمل بنجاح!** 📈
 • **الرصيد الإجمالي:** {total_wallet_balance:.2f} USDT 💰
 • **الرصيد المتاح:** {available_balance:.2f} USDT 💵
 • **رصيد المحفظة:** {usdt_balance:.2f} USDT 💳
+• **السعر الحالي:** {current_price:.4f} USD 💲
 • **الرافعة المالية:** {self.leverage}x ⚙️
 • **الوقف المتحرك:** {'🟢 مفعل' if self.trailing_stop else '🔴 غير مفعل'} 🔄
 • **زمن التشغيل:** {datetime.now(self.damascus_tz).strftime('%Y-%m-%d %H:%M:%S')} ⏰
             """)
             
-            logging.info(f"Bot initialized successfully - Total Balance: {total_wallet_balance}, Available: {available_balance}")
+            logging.info(f"Bot initialized successfully - Total Balance: {total_wallet_balance}, Available: {available_balance}, Current Price: {current_price}")
             return True
             
         except Exception as e:
@@ -261,7 +269,12 @@ class BNBScalpingBot:
         """الحصول على السعر الحالي"""
         try:
             ticker = self.client.futures_symbol_ticker(symbol=self.symbol)
-            return float(ticker['price'])
+            price = float(ticker['price'])
+            if price <= 0:
+                logging.error(f"Invalid price received: {price}")
+                return 0
+            self.last_price = price
+            return price
         except Exception as e:
             logging.error(f"Error getting current price: {e}")
             return 0
@@ -312,14 +325,39 @@ class BNBScalpingBot:
                 await self.send_telegram_message("🛑 **توقف التداول!** 3 خسائر متتالية. يرجى التحقق يدويًا. ⚠️")
                 return None
             
+            # التحقق من صحة السعر
+            if price <= 0:
+                logging.error(f"Invalid price for trade: {price}")
+                await self.send_telegram_message(f"❌ **سعر غير صالح للتداول!** ⚠️\nالسعر: {price}")
+                return None
+            
             # حساب الكمية مع الضبط
             raw_quantity = self.trade_amount / price
+            logging.info(f"Raw quantity calculation: {self.trade_amount} / {price} = {raw_quantity}")
+            
+            if raw_quantity <= 0:
+                logging.error(f"Invalid raw quantity: {raw_quantity}")
+                await self.send_telegram_message(f"❌ **الكمية غير صالحة!** ⚠️\nالكمية المحسوبة: {raw_quantity}")
+                return None
+            
             quantity = self.adjust_quantity(raw_quantity)
             
-            # التحقق من أن الكمية ليست صفر
+            # التحقق النهائي من الكمية
             if quantity <= 0:
-                await self.send_telegram_message(f"❌ **الكمية غير صالحة!** ⚠️\nالكمية المحسوبة: {quantity}")
+                logging.error(f"Adjusted quantity is invalid: {quantity}")
+                await self.send_telegram_message(f"❌ **الكمية المعدلة غير صالحة!** ⚠️\nالكمية: {quantity}")
                 return None
+
+            # التحقق من الحد الأدنى للكمية
+            symbol_info = self.get_symbol_info()
+            if symbol_info:
+                quantity_filter = next((f for f in symbol_info['filters'] if f['filterType'] == 'LOT_SIZE'), None)
+                if quantity_filter:
+                    min_qty = float(quantity_filter['minQty'])
+                    if quantity < min_qty:
+                        logging.error(f"Quantity below minimum: {quantity} < {min_qty}")
+                        await self.send_telegram_message(f"❌ **الكمية أقل من المسموح!** ⚠️\nالكمية: {quantity} < الحد الأدنى: {min_qty}")
+                        return None
 
             if signal_type == 'LONG':
                 order = self.client.futures_create_order(
@@ -357,11 +395,11 @@ class BNBScalpingBot:
 • **النوع:** {signal_type} 📊
 • **سعر الدخول:** {price:.4f} USD 💲
 • **الكمية:** {quantity} BNB 📦
+• **القيمة:** {quantity * price:.2f} USD 💰
 • **وقف الخسارة:** {stop_price:.4f} USD 🛑
 • **جني الربح:** {take_profit_price:.4f} USD ✅
 • **الوقت:** {datetime.now(self.damascus_tz).strftime('%H:%M:%S')} ⏰
 • **الرافعة:** {self.leverage}x ⚙️
-• **الدقة المعدلة:** نعم ✅
             """
             
             await self.send_telegram_message(message)
@@ -657,7 +695,13 @@ class BNBScalpingBot:
                 signals = self.analyze_signals(df)
                 
                 if signals:
-                    logging.info(f"Signals - EMA Fast: {signals['ema_fast']:.4f}, EMA Slow: {signals['ema_slow']:.4f}, RSI: {signals['rsi']:.2f}")
+                    logging.info(f"Signals - EMA Fast: {signals['ema_fast']:.4f}, EMA Slow: {signals['ema_slow']:.4f}, RSI: {signals['rsi']:.2f}, Price: {signals['price']:.4f}")
+                    
+                    # التحقق من صحة السعر قبل التداول
+                    if signals['price'] <= 0:
+                        logging.error(f"Invalid signal price: {signals['price']}")
+                        await asyncio.sleep(60)
+                        continue
                     
                     if signals['long_signal'] and not self.open_position:
                         await self.execute_trade('LONG', signals['price'])
