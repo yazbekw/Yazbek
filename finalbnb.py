@@ -21,7 +21,7 @@ load_dotenv()
 
 # ========== الإعدادات الجديدة المعدلة ==========
 TRADING_SETTINGS = {
-    'symbols': ["BNBUSDT", "ETHUSDT"],
+    'symbols': ["BNBUSDT"],
     'used_balance_per_trade': 10,
     'max_leverage': 5,
     'nominal_trade_size': 50,
