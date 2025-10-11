@@ -7,4 +7,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Send Ping to Render
-        run: curl https://mybot-1-61u6.onrender.com/  # استبدل بـ URL تطبيقك
+        run: curl https://mybot-1-61u6.onrender.com/
