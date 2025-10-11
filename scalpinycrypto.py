@@ -29,7 +29,7 @@ TRADING_SETTINGS = {
     'data_interval': '5m',
     'rescan_interval_minutes': 3,
     'min_signal_confidence': 0.80,
-    'target_profit_pct': 0.15,  # جني ربح 0.15%
+    'target_profit_pct': 0.2,  # جني ربح 0.15%
     'stop_loss_pct': 0.08,     # وقف خسارة 0.08%
     'max_trade_duration_minutes': 20,
     'max_daily_trades': 30,
