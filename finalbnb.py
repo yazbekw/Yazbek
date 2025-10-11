@@ -29,8 +29,8 @@ TRADING_SETTINGS = {
     'data_interval': '5m',                       # ⬅️ إطار زمني مناسب للاستراتيجية
     'rescan_interval_minutes': 3,                # ⬅️ مسح كل 3 دقائق
     'min_signal_confidence': 0.90,
-    'target_profit_pct': 0.15,                    # ⬅️ هدف 3%
-    'stop_loss_pct': 0.08,                        # ⬅️ وقف 1%
+    'target_profit_pct': 0.13,                    # ⬅️ هدف 3%
+    'stop_loss_pct': 0.07,                        # ⬅️ وقف 1%
     'max_trade_duration_minutes': 20,            # ⬅️ مدة الصفقة 15 دقيقة
     'max_daily_trades': 30,
     'cooldown_after_loss': 5,
