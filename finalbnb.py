@@ -25,7 +25,7 @@ TRADING_SETTINGS = {
     'used_balance_per_trade': 10,                # ⬅️ حجم الصفقة: 10$
     'max_leverage': 5,                           # ⬅️ الرافعة: 5x
     'nominal_trade_size': 50,                    # ⬅️ الرصيد الاسمي: 50$ (10$ × 5)
-    'max_active_trades': 1,
+    'max_active_trades': 2,
     'data_interval': '5m',                       # ⬅️ إطار زمني مناسب للاستراتيجية
     'rescan_interval_minutes': 3,                # ⬅️ مسح كل 3 دقائق
     'min_signal_confidence': 0.90,
