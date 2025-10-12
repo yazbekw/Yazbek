@@ -38,7 +38,7 @@ TRADING_SETTINGS = {
     'order_timeout_minutes': 2,
     'btc_confirmation_required': True,
     'min_btc_confidence': 0.70,
-    'min_price_distance': 0.002,
+    'min_price_distance': 0.001,
 }
 
 # ضبط التوقيت
@@ -569,39 +569,48 @@ class SimpleOrderManager:
     def calculate_stop_prices(self, symbol, direction, entry_price):
         """حساب أسعار الوقف والجني مع ضبط الدقة والتحقق من المسافات"""
         try:
-            min_distance_pct = max(TRADING_SETTINGS['min_price_distance'], 0.003)
-            
+            # استخدام النسب من الإعدادات مع ضمان الحد الأدنى
+            target_profit_pct = TRADING_SETTINGS['target_profit_pct'] / 100
+            stop_loss_pct = TRADING_SETTINGS['stop_loss_pct'] / 100
+            min_distance_pct = TRADING_SETTINGS['min_price_distance']  # استخدام الإعدادات الأصلية
+        
             if direction == 'LONG':
-                stop_loss_pct = max(TRADING_SETTINGS['stop_loss_pct'] / 100, min_distance_pct)
-                stop_loss_price = entry_price * (1 - stop_loss_pct)
-                
-                take_profit_pct = max(TRADING_SETTINGS['target_profit_pct'] / 100, min_distance_pct)
-                take_profit_price = entry_price * (1 + take_profit_pct)
-                
-            else:
-                stop_loss_pct = max(TRADING_SETTINGS['stop_loss_pct'] / 100, min_distance_pct)
-                stop_loss_price = entry_price * (1 + stop_loss_pct)
-                
-                take_profit_pct = max(TRADING_SETTINGS['target_profit_pct'] / 100, min_distance_pct)
-                take_profit_price = entry_price * (1 - take_profit_pct)
+                # وقف الخسارة: تأخذ القيمة الأكبر بين الإعداد والحد الأدنى
+                final_stop_loss_pct = max(stop_loss_pct, min_distance_pct)
+                stop_loss_price = entry_price * (1 - final_stop_loss_pct)
             
+                # جني الربح: تأخذ القيمة الأكبر بين الإعداد والحد الأدنى
+                final_take_profit_pct = max(target_profit_pct, min_distance_pct)
+                take_profit_price = entry_price * (1 + final_take_profit_pct)
+            
+            else:  # SHORT
+                # وقف الخسارة: تأخذ القيمة الأكبر بين الإعداد والحد الأدنى
+                final_stop_loss_pct = max(stop_loss_pct, min_distance_pct)
+                stop_loss_price = entry_price * (1 + final_stop_loss_pct)
+            
+                # جني الربح: تأخذ القيمة الأكبر بين الإعداد والحد الأدنى
+                final_take_profit_pct = max(target_profit_pct, min_distance_pct)
+                take_profit_price = entry_price * (1 - final_take_profit_pct)
+        
+            # ضبط الدقة
             stop_loss_price = self.precision_manager.adjust_price(symbol, stop_loss_price)
             take_profit_price = self.precision_manager.adjust_price(symbol, take_profit_price)
-            
+        
             logger.info(f"📊 الأسعار المحسوبة لـ {symbol}:")
             logger.info(f"  💰 الدخول: ${entry_price:.4f}")
-            logger.info(f"  🎯 الجني: ${take_profit_price:.4f} (فرق: {(take_profit_price/entry_price-1)*100:+.2f}%)")
-            logger.info(f"  🛡️ الوقف: ${stop_loss_price:.4f} (فرق: {(stop_loss_price/entry_price-1)*100:+.2f}%)")
-            
+            logger.info(f"  🎯 الجني: ${take_profit_price:.4f} (فرق: {final_take_profit_pct*100:.2f}%)")
+            logger.info(f"  🛡️ الوقف: ${stop_loss_price:.4f} (فرق: {final_stop_loss_pct*100:.2f}%)")
+        
             return take_profit_price, stop_loss_price
-            
+        
         except Exception as e:
             logger.error(f"❌ خطأ في حساب أسعار الوقف لـ {symbol}: {e}")
+            # قيم افتراضية آمنة
             if direction == 'LONG':
                 return self.precision_manager.adjust_price(symbol, entry_price * 1.015), self.precision_manager.adjust_price(symbol, entry_price * 0.985)
             else:
-                return self.precision_manager.adjust_price(symbol, entry_price * 0.985), self.precision_manager.adjust_price(symbol, entry_price * 1.015)
-    
+                return self.precision_manager.adjust_price(symbol, entry_price * 0.985), self.precision_manager.adjust_price(symbol, entry_price * 1.015) 
+   
     def validate_stop_prices_against_current(self, symbol, direction, entry_price, take_profit_price, stop_loss_price):
         """التحقق من أن أسعار الوقف والجني لن تنفذ فوراً مقابل السعر الحالي"""
         try:
