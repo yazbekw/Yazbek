@@ -35,7 +35,7 @@ TRADING_SETTINGS = {
     'max_daily_trades': 30,
     'cooldown_after_loss': 5,
     'max_trades_per_symbol': 2,
-    'order_timeout_minutes': 2,
+    'order_timeout_minutes': 1,
     'btc_confirmation_required': True,
     'min_btc_confidence': 0.70,
     'min_price_distance': 0.001,
