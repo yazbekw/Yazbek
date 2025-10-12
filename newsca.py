@@ -24,7 +24,7 @@ TRADING_SETTINGS = {
     'symbols': ["BNBUSDT","ETHUSDT"],
     'used_balance_per_trade': 9,
     'max_leverage': 6,
-    'nominal_trade_size': 50,
+    'nominal_trade_size': 54,
     'max_active_trades': 1,
     'data_interval': '5m',
     'rescan_interval_minutes': 3,
