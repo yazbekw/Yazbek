@@ -175,6 +175,7 @@ class PrecisionManager:
             logger.error(f"❌ خطأ في ضبط كمية {symbol}: {e}")
             return round(quantity, 6)
 
+
 class ScalpingSignalGenerator:
     def __init__(self):
         self.min_confidence = TRADING_SETTINGS['min_signal_confidence']
@@ -201,6 +202,7 @@ class ScalpingSignalGenerator:
         df['ema5'] = df['close'].ewm(span=5, adjust=False).mean()
         df['ema9'] = df['close'].ewm(span=9, adjust=False).mean()
         df['ema10'] = df['close'].ewm(span=10, adjust=False).mean()
+        df['ema20'] = df['close'].ewm(span=20, adjust=False).mean()  # ✅ أضف هذا السطر
         df['ema21'] = df['close'].ewm(span=21, adjust=False).mean()
         
         # مؤشر RSI
@@ -220,6 +222,7 @@ class ScalpingSignalGenerator:
             'ema5': latest['ema5'],
             'ema9': latest['ema9'],
             'ema10': latest['ema10'],
+            'ema20': latest['ema20'],  # ✅ أضف هذا
             'ema21': latest['ema21'],
             'rsi': latest['rsi'],
             'current_price': current_price,
@@ -257,7 +260,7 @@ class ScalpingSignalGenerator:
         conditions.append(indicators['ema5'] > indicators['ema10'])
         weights.append(0.15)
         
-        conditions.append(indicators['ema10'] > indicators['ema20'])
+        conditions.append(indicators['ema10'] > indicators['ema20'])  # ✅ الآن ema20 موجود
         weights.append(0.20)
         
         # شروط بداية الصعود المضافة
@@ -304,7 +307,7 @@ class ScalpingSignalGenerator:
         conditions.append(indicators['ema5'] < indicators['ema10'])
         weights.append(0.15)
         
-        conditions.append(indicators['ema10'] < indicators['ema20'])
+        conditions.append(indicators['ema10'] < indicators['ema20'])  # ✅ الآن ema20 موجود
         weights.append(0.20)
         
         # شروط بداية الهبوط المضافة
