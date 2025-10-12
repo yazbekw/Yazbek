@@ -25,7 +25,7 @@ TRADING_SETTINGS = {
     'used_balance_per_trade': 12,
     'max_leverage': 4,
     'nominal_trade_size': 48,
-    'max_active_trades': 2,
+    'max_active_trades': 1,
     'data_interval': '5m',
     'rescan_interval_minutes': 3,
     'min_signal_confidence': 0.85,
