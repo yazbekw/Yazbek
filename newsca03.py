@@ -21,16 +21,16 @@ load_dotenv()
 
 # ========== الإعدادات الجديدة المعدلة ==========
 TRADING_SETTINGS = {
-    'symbols': ["BNBUSDT"],
-    'used_balance_per_trade': 10,
-    'max_leverage': 5,
-    'nominal_trade_size': 50,
+    'symbols': [ETHBUSDT"],
+    'used_balance_per_trade': 8,
+    'max_leverage': 6,
+    'nominal_trade_size': 48,
     'max_active_trades': 2,
     'data_interval': '5m',
     'rescan_interval_minutes': 3,
-    'min_signal_confidence': 0.80,
-    'target_profit_pct': 0.15,
-    'stop_loss_pct': 0.08,
+    'min_signal_confidence': 0.90,
+    'target_profit_pct': 0.25,
+    'stop_loss_pct': 0.10,
     'max_trade_duration_minutes': 20,
     'max_daily_trades': 30,
     'cooldown_after_loss': 5,
