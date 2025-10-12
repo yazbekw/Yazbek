@@ -21,15 +21,15 @@ load_dotenv()
 
 # ========== الإعدادات الجديدة المعدلة ==========
 TRADING_SETTINGS = {
-    'symbols': ["ETHUSDT"],
+    'symbols': ["ETHUSDT","BNBUSDT"],
     'used_balance_per_trade': 8,
     'max_leverage': 6,
     'nominal_trade_size': 48,
     'max_active_trades': 2,
     'data_interval': '5m',
     'rescan_interval_minutes': 3,
-    'min_signal_confidence': 0.90,
-    'target_profit_pct': 0.25,
+    'min_signal_confidence': 0.85,
+    'target_profit_pct': 0.22,
     'stop_loss_pct': 0.10,
     'max_trade_duration_minutes': 20,
     'max_daily_trades': 30,
