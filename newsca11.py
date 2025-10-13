@@ -26,7 +26,7 @@ TRADING_SETTINGS = {
     'max_active_trades': 2,
     'data_interval': '5m',
     'rescan_interval_minutes': 1,
-    'target_profit_pct': 0.20,
+    'target_profit_pct': 0.15,
     'stop_loss_pct': 0.08,
     'max_trade_duration_minutes': 10,
     'max_daily_trades': 30,
