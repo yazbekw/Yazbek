@@ -36,7 +36,7 @@ TRADING_SETTINGS = {
     'cooldown_after_loss': 5,
     'max_trades_per_symbol': 1,
     'order_timeout_minutes': 1,
-    'btc_confirmation_required': True,
+    'btc_confirmation_required': False,
     'min_btc_confidence': 0.70,
     'min_price_distance': 0.001,
 }
