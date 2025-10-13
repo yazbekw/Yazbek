@@ -25,12 +25,12 @@ TRADING_SETTINGS = {
     'max_leverage': 4,
     'max_active_trades': 1,
     'data_interval': '5m',
-    'rescan_interval_minutes': 3,
+    'rescan_interval_minutes': 1,
     'target_profit_pct': 0.20,
     'stop_loss_pct': 0.08,
     'max_trade_duration_minutes': 10,
     'max_daily_trades': 30,
-    'cooldown_after_loss': 5,
+    'cooldown_after_loss': 3,
     'max_trades_per_symbol': 1,
 }
 
