@@ -610,7 +610,7 @@ class SimpleTradeManager:
                     self.check_trade_limits()
                     self.check_trade_duration()
                     self.cleanup_closed_trades()
-                    time.sleep(60)  # التحقق كل دقيقة
+                    time.sleep(20)  # التحقق كل دقيقة
                 except Exception as e:
                     logger.error(f"❌ خطأ في مراقبة الصفقات: {e}")
                     time.sleep(60)
@@ -1033,6 +1033,8 @@ class ScalpingTradingBot:
                 'timestamp': datetime.now(damascus_tz)
             }
 
+    # ... (الكود السابق يبقى كما هو)
+
     def start_services(self):
         def sync_thread():
             while True:
@@ -1043,14 +1045,94 @@ class ScalpingTradingBot:
                 except Exception as e:
                     logger.error(f"❌ خطأ في المزامنة: {e}")
                     time.sleep(60)
-        
+    
         threading.Thread(target=sync_thread, daemon=True).start()
-        
+    
         if self.notifier:
+            # ✅ إضافة التقرير اليومي عند الساعة 11 مساءً بتوقيت دمشق
+            schedule.every().day.at("23:00").do(self.send_daily_report)
+        
             schedule.every(6).hours.do(self.send_performance_report)
             schedule.every(2).hours.do(self.send_balance_report)
             schedule.every(1).hours.do(self.send_heartbeat)
 
+    def send_daily_report(self):
+        """إرسال تقرير يومي شامل عن أداء البوت"""
+        try:
+            if not self.notifier:
+                return
+        
+            # الحصول على إحصائيات اليوم
+            today = datetime.now(damascus_tz).date()
+            daily_trades = self.performance_stats['daily_trades_count']
+        
+            # حساب الربح/الخسارة اليومي
+            daily_pnl = self.calculate_daily_pnl()
+        
+            # الحصول على الصفقات النشطة الحالية
+            active_trades = self.trade_manager.get_active_trades_count()
+        
+            # تحديث الرصيد
+            self.update_real_time_balance()
+            balance = self.real_time_balance
+        
+            # حساب معدل الفوز
+            win_rate = 0
+            if self.performance_stats['trades_closed'] > 0:
+                win_rate = (self.performance_stats['winning_trades'] / self.performance_stats['trades_closed']) * 100
+        
+            # إعداد رسالة التقرير اليومي
+            message = (
+                f"📊 <b>التقرير اليومي - بوت السكالبينج</b>\n"
+                f"📅 التاريخ: {today.strftime('%Y-%m-%d')}\n"
+                f"⏰ الوقت: {datetime.now(damascus_tz).strftime('%H:%M:%S')}\n"
+                f"═══════════════════\n"
+                f"📈 <b>أداء اليوم:</b>\n"
+                f"• عدد الصفقات: {daily_trades}\n"
+                f"• الصفقات النشطة: {active_trades}\n"
+                f"• الربح/الخسارة: {daily_pnl:+.2f}%\n"
+                f"═══════════════════\n"
+                f"💰 <b>الرصيد:</b>\n"
+                f"• الإجمالي: ${balance['total_balance']:.2f}\n"
+                f"• المتاح: ${balance['available_balance']:.2f}\n"
+                f"═══════════════════\n"
+                f"🎯 <b>الإعدادات النشطة:</b>\n"
+                f"• العملات: {', '.join(self.TRADING_SETTINGS['symbols'])}\n"
+                f"• الرافعة: {self.TRADING_SETTINGS['max_leverage']}x\n"
+                f"• وقف الخسارة: {self.TRADING_SETTINGS['stop_loss_pct']}%\n"
+                f"• جني الربح: {self.TRADING_SETTINGS['target_profit_pct']}%\n"
+                f"═══════════════════\n"
+                f"📋 <b>ملخص الأداء الكلي:</b>\n"
+                f"• إجمالي الصفقات: {self.performance_stats['trades_opened']}\n"
+                f"• الصفقات المغلقة: {self.performance_stats['trades_closed']}\n"
+                f"• الصفقات الرابحة: {self.performance_stats['winning_trades']}\n"
+                f"• الصفقات الخاسرة: {self.performance_stats['losing_trades']}\n"
+                f"• معدل الفوز: {win_rate:.1f}%\n"
+                f"• الخسائر المتتالية: {self.performance_stats['consecutive_losses']}\n"
+                f"🔚 <b>نهاية التقرير اليومي</b>"
+            )
+        
+            success = self.notifier.send_message(message, 'daily_report')
+            if success:
+                logger.info("✅ تم إرسال التقرير اليومي بنجاح")
+            
+            return success
+        
+        except Exception as e:
+            logger.error(f"❌ خطأ في إرسال التقرير اليومي: {e}")
+            return False
+
+    def calculate_daily_pnl(self):
+        """حساب الربح/الخسارة اليومي - نسخة مبسطة"""
+        try:
+            # هذه نسخة مبسطة - يمكن تطويرها لتتبع PnL يومي مفصل
+            # حالياً نعود بقيمة إجمالية
+            return self.performance_stats.get('total_pnl', 0.0)
+        except Exception as e:
+            logger.error(f"❌ خطأ في حساب PnL اليومي: {e}")
+            return 0.0
+
+# ... (بقية الكود يبقى كما هو)
     def update_real_time_balance(self):
         try:
             self.real_time_balance = self.get_real_time_balance()
