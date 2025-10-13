@@ -463,32 +463,26 @@ class AdvancedMACDSignalGenerator:
         }
     
     def _analyze_base_signal(self, indicators, symbol, current_price, macd_status):
-        """تحليل الإشارة الأساسية (التقاطع) مع الماكد"""
-        # اكتشاف التقاطعات
+        """تحليل الإشارة الأساسية (التقاطع) مع الماكد - معدل"""
+        # 🛑 التصحيح: التحقق من التقاطع الفعلي فقط
         ema9_cross_above_21 = (indicators['ema9'] > indicators['ema21'] and 
                               indicators['ema9_prev'] <= indicators['ema21_prev'])
         ema9_cross_below_21 = (indicators['ema9'] < indicators['ema21'] and 
                               indicators['ema9_prev'] >= indicators['ema21_prev'])
-        
-        # تحليل الشمعة
+    
+        # 🛑 إزالة الشروط الإضافية التي تسبب فتح صفقات مبكرة
         is_bullish_candle = indicators['current_close'] > indicators['current_open']
         is_bearish_candle = indicators['current_close'] < indicators['current_open']
-        
-        # 🆕 تحليل الماكد للتقاطع الأساسي
-        macd_bullish_confirmation = macd_status['bullish'] or not TRADING_SETTINGS['macd_required_additional']
-        macd_bearish_confirmation = macd_status['bearish'] or not TRADING_SETTINGS['macd_required_additional']
-        
-        # إشارة شراء أساسية
-        if (ema9_cross_above_21 and indicators['rsi'] > 50 and 
-            is_bullish_candle and macd_bullish_confirmation):
-            
+    
+        # إشارة شراء أساسية - التقاطع الفعلي فقط
+        if ema9_cross_above_21 and macd_status['bullish']:
             self.trend_manager.log_macd_signal(symbol, 'BASE_CROSSOVER', macd_status, 'BUY_SIGNAL')
-            
+        
             return {
                 'symbol': symbol,
                 'direction': 'LONG',
-                'confidence': 0.90,
-                'reason': 'تقاطع أساسي - EMA 9 فوق EMA 21 مع RSI > 50 وتأكيد الماكد',
+                'confidence': 0.95,  # زيادة الثقة
+                'reason': 'تقاطع فعلي - EMA 9 فوق EMA 21 مع تأكيد الماكد',
                 'indicators': indicators,
                 'timestamp': datetime.now(damascus_tz),
                 'current_price': current_price,
@@ -496,18 +490,16 @@ class AdvancedMACDSignalGenerator:
                 'priority': 100,
                 'macd_status': macd_status
             }
-        
-        # إشارة بيع أساسية
-        if (ema9_cross_below_21 and indicators['rsi'] < 50 and 
-            is_bearish_candle and macd_bearish_confirmation):
-            
+    
+        # إشارة بيع أساسية - التقاطع الفعلي فقط
+        if ema9_cross_below_21 and macd_status['bearish']:
             self.trend_manager.log_macd_signal(symbol, 'BASE_CROSSOVER', macd_status, 'SELL_SIGNAL')
-            
+        
             return {
                 'symbol': symbol,
                 'direction': 'SHORT',
-                'confidence': 0.90,
-                'reason': 'تقاطع أساسي - EMA 9 تحت EMA 21 مع RSI < 50 وتأكيد الماكد',
+                'confidence': 0.95,  # زيادة الثقة
+                'reason': 'تقاطع فعلي - EMA 9 تحت EMA 21 مع تأكيد الماكد',
                 'indicators': indicators,
                 'timestamp': datetime.now(damascus_tz),
                 'current_price': current_price,
@@ -515,7 +507,7 @@ class AdvancedMACDSignalGenerator:
                 'priority': 100,
                 'macd_status': macd_status
             }
-        
+    
         return None
     
     def _analyze_additional_signals(self, indicators, symbol, current_price, data, macd_status):
@@ -736,20 +728,34 @@ class AdvancedMACDTradeManager:
                 return entry_price * 0.998, entry_price * 1.002
     
     def check_and_handle_opposite_signals(self, symbol, new_direction):
-        """التحقق من وجود صفقة معاكسة وإغلاقها"""
+        """التحقق من وجود صفقة معاكسة وإغلاقها - معدل"""
         try:
             if self.is_symbol_trading(symbol):
                 current_trade = self.get_trade(symbol)
                 current_direction = current_trade['side']
-                
-                # إذا كانت الإشارة الجديدة معاكسة للصفقة الحالية
+            
+                # 🛑 إذا كانت الإشارة الجديدة معاكسة للصفقة الحالية
                 if current_direction != new_direction:
                     current_price = self._get_current_price(symbol)
                     if current_price:
                         logger.info(f"🔄 إشارة معاكسة لـ {symbol}: {current_direction} -> {new_direction}")
-                        self.close_trade(symbol, f"إشارة معاكسة ({new_direction})", current_price)
+                    
+                        # حساب PnL الحالي
+                        entry_price = current_trade['entry_price']
+                        if current_direction == 'LONG':
+                            current_pnl = (current_price - entry_price) / entry_price * 100
+                        else:
+                            current_pnl = (entry_price - current_price) / entry_price * 100
+                    
+                        # إغلاق الصفقة الحالية
+                        close_reason = f"إشارة معاكسة ({new_direction}) - PnL: {current_pnl:+.2f}%"
+                        self.close_trade(symbol, close_reason, current_price)
+                    
                         # إنهاء الترند الحالي
                         self.trend_manager.end_trend(symbol, "إشارة معاكسة")
+                    
+                        # 🛑 انتظار قبل فتح الصفقة الجديدة
+                        time.sleep(3)
                         return True
             return False
         except Exception as e:
@@ -773,50 +779,59 @@ class AdvancedMACDTradeManager:
         logger.info("✅ بدء مراقبة الصفقات النشطة مع الماكد")
     
     def _check_limits_and_duration(self):
-        """التحقق من الحدود والمدة مع الإغلاق المبكر بالماكد"""
+        """التحقق من الحدود والمدة مع الإغلاق المبكر بالماكد - معدل"""
         current_time = datetime.now(damascus_tz)
-        
+    
         for symbol, trade in list(self.active_trades.items()):
             if trade['status'] != 'open':
                 continue
-            
+        
             current_price = self._get_current_price(symbol)
             if not current_price:
                 continue
+        
+            # 🛑 التصحيح: التحقق من وقف الخسارة وجني الربح أولاً
+            entry_price = trade['entry_price']
+            direction = trade['side']
+        
+            if direction == 'LONG':
+                pnl_pct = (current_price - entry_price) / entry_price * 100
             
-            # 🆕 الحصول على بيانات الماكد الحالية
-            macd_data = self._get_current_macd_data(symbol)
-            if not macd_data:
-                continue
+                # 🛑 التحقق من وقف الخسارة أولاً
+                if current_price <= trade['stop_loss_price']:
+                    self.close_trade(symbol, f"وقف الخسارة ({pnl_pct:+.2f}%)", current_price)
+                    continue
+                
+                # ثم جني الربح
+                if current_price >= trade['take_profit_price']:
+                    self.close_trade(symbol, f"جني الربح ({pnl_pct:+.2f}%)", current_price)
+                    continue
+                
+            else:  # SHORT
+                pnl_pct = (entry_price - current_price) / entry_price * 100
             
-            # 🆕 التحقق من الإغلاق المبكر بالماكد
-            if (TRADING_SETTINGS['macd_early_exit'] and 
-                self._check_macd_early_exit(symbol, trade, macd_data, current_price)):
-                continue
-            
-            # التحقق من المدة
+                # 🛑 التحقق من وقف الخسارة أولاً
+                if current_price >= trade['stop_loss_price']:
+                    self.close_trade(symbol, f"وقف الخسارة ({pnl_pct:+.2f}%)", current_price)
+                    continue
+                
+                # ثم جني الربح
+                if current_price <= trade['take_profit_price']:
+                    self.close_trade(symbol, f"جني الربح ({pnl_pct:+.2f}%)", current_price)
+                    continue
+        
+            # 🛑 ثم التحقق من الإغلاق المبكر بالماكد
+            if TRADING_SETTINGS['macd_early_exit']:
+                macd_data = self._get_current_macd_data(symbol)
+                if macd_data and self._check_macd_early_exit(symbol, trade, macd_data, current_price):
+                    continue
+        
+            # 🛑 أخيراً التحقق من المدة
             trade_duration = (current_time - trade['timestamp']).total_seconds() / 60
             if trade_duration >= TRADING_SETTINGS['max_trade_duration_minutes']:
                 self.close_trade(symbol, f"انتهت المدة ({trade_duration:.1f} دقيقة)", current_price)
                 continue
-            
-            # التحقق من وقف الخسارة وجني الربح
-            entry_price = trade['entry_price']
-            direction = trade['side']
-            
-            if direction == 'LONG':
-                pnl_pct = (current_price - entry_price) / entry_price * 100
-                if current_price >= trade['take_profit_price']:
-                    self.close_trade(symbol, f"جني الربح ({pnl_pct:+.2f}%)", current_price)
-                elif current_price <= trade['stop_loss_price']:
-                    self.close_trade(symbol, f"وقف الخسارة ({pnl_pct:+.2f}%)", current_price)
-            else:
-                pnl_pct = (entry_price - current_price) / entry_price * 100
-                if current_price <= trade['take_profit_price']:
-                    self.close_trade(symbol, f"جني الربح ({pnl_pct:+.2f}%)", current_price)
-                elif current_price >= trade['stop_loss_price']:
-                    self.close_trade(symbol, f"وقف الخسارة ({pnl_pct:+.2f}%)", current_price)
-    
+                
     def _get_current_macd_data(self, symbol):
         """🆕 الحصول على بيانات الماكد الحالية"""
         try:
@@ -1063,57 +1078,65 @@ class TelegramNotifier:
             return False
     
     def send_signal_alert(self, symbol, signal, current_price, trend_status=None):
-        """إرسال إشعار إشارة مع بيانات الماكد"""
-        direction_emoji = "🟢" if signal['direction'] == 'LONG' else "🔴"
-        signal_type_emoji = {
-            'BASE_CROSSOVER': '🎯',
-            'PULLBACK': '📈', 
-            'MOMENTUM': '⚡',
-            'BREAKOUT': '🚀',
-            'RENEWAL': '🔄'
-        }.get(signal['signal_type'], '📊')
+        """إرسال إشعار إشارة مع بيانات الماكد - معدل"""
+        try:
+            direction_emoji = "🟢" if signal['direction'] == 'LONG' else "🔴"
+            signal_type_emoji = {
+                'BASE_CROSSOVER': '🎯',
+                'PULLBACK': '📈', 
+                'MOMENTUM': '⚡',
+                'BREAKOUT': '🚀',
+                'RENEWAL': '🔄'
+            }.get(signal['signal_type'], '📊')
         
-        # 🆕 معلومات الماكد
-        macd_info = ""
-        if 'macd_status' in signal:
-            macd = signal['macd_status']
-            macd_emoji = "🟢" if macd['bullish'] else "🔴"
-            histogram_emoji = "📈" if macd['histogram_increasing'] else "📉"
-            macd_info = (
-                f"🔮 <b>تحليل الماكد:</b>\n"
-                f"• الحالة: {macd_emoji} {'صاعد' if macd['bullish'] else 'هابط'}\n"
-                f"• الماكد: {macd['macd']:.6f}\n"
-                f"• الإشارة: {macd['signal']:.6f}\n"
-                f"• الهيستوجرام: {histogram_emoji} {macd['histogram']:.6f}\n"
+            # معلومات الماكد
+            macd_info = ""
+            if 'macd_status' in signal:
+                macd = signal['macd_status']
+                macd_emoji = "🟢" if macd['bullish'] else "🔴"
+                histogram_emoji = "📈" if macd['histogram_increasing'] else "📉"
+                macd_info = (
+                    f"🔮 <b>تحليل الماكد:</b>\n"
+                    f"• الحالة: {macd_emoji} {'صاعد' if macd['bullish'] else 'هابط'}\n"
+                    f"• الماكد: {macd['macd']:.6f}\n"
+                    f"• الإشارة: {macd['signal']:.6f}\n"
+                    f"• الهيستوجرام: {histogram_emoji} {macd['histogram']:.6f}\n"
+                )
+        
+            trend_info = ""
+            if trend_status:
+                trend_duration = (datetime.now(damascus_tz) - trend_status['start_time']).total_seconds() / 60
+                trend_info = (
+                    f"📊 <b>حالة الترند:</b>\n"
+                    f"• الصفقات: {trend_status['trades_count']}\n"
+                    f"• المدة: {trend_duration:.1f} دقيقة\n"
+                    f"• إجمالي PnL: {trend_status.get('total_pnl', 0):+.2f}%\n"
+                    f"• تأكيدات الماكد: {trend_status.get('macd_confirmations', 0)}\n"
+                )
+        
+            message = (
+                f"{direction_emoji} <b>إشارة تداول جديدة</b> {signal_type_emoji}\n"
+                f"العملة: {symbol}\n"
+                f"الاتجاه: {signal['direction']}\n"
+                f"النوع: {signal['signal_type']}\n"
+                f"السعر: ${current_price:.4f}\n"
+                f"الثقة: {signal['confidence']:.2%}\n"
+                f"السبب: {signal['reason']}\n"
+                f"📊 المؤشرات:\n"
+                f"• EMA 9: {signal['indicators']['ema9']:.4f}\n"
+                f"• EMA 21: {signal['indicators']['ema21']:.4f}\n"
+                f"• RSI: {signal['indicators']['rsi']:.1f}\n"
+                f"{macd_info}"
+                f"{trend_info}"
+                f"الوقت: {datetime.now(damascus_tz).strftime('%H:%M:%S')}"
             )
         
-        trend_info = ""
-        if trend_status:
-            trend_info = (
-                f"📊 <b>حالة الترند:</b>\n"
-                f"• الصفقات: {trend_status['trades_count']}/5\n"
-                f"• المدة: {((datetime.now(damascus_tz) - trend_status['start_time']).total_seconds() / 60):.1f} دقيقة\n"
-                f"• إجمالي PnL: {trend_status['total_pnl']:+.2f}%\n"
-                f"• تأكيدات الماكد: {trend_status.get('macd_confirmations', 0)}\n"
-            )
+            # 🛑 التصحيح: إرجاع نتيجة الإرسال مباشرة
+            return self.send_message(message)
         
-        message = (
-            f"{direction_emoji} <b>إشارة تداول جديدة</b> {signal_type_emoji}\n"
-            f"العملة: {symbol}\n"
-            f"الاتجاه: {signal['direction']}\n"
-            f"النوع: {signal['signal_type']}\n"
-            f"السعر: ${current_price:.4f}\n"
-            f"الثقة: {signal['confidence']:.2%}\n"
-            f"السبب: {signal['reason']}\n"
-            f"📊 المؤشرات:\n"
-            f"• EMA 9: {signal['indicators']['ema9']:.4f}\n"
-            f"• EMA 21: {signal['indicators']['ema21']:.4f}\n"
-            f"• RSI: {signal['indicators']['rsi']:.1f}\n"
-            f"{macd_info}"
-            f"{trend_info}"
-            f"الوقت: {datetime.now(damascus_tz).strftime('%H:%M:%S')}"
-        )
-        return self.send_message(message)
+        except Exception as e:
+            logger.error(f"❌ خطأ في إرسال إشعار الإشارة: {e}")
+            return False
 
 class AdvancedMACDTrendBot:
     _instance = None
