@@ -29,7 +29,7 @@ TRADING_SETTINGS = {
     'data_interval': '5m',
     'rescan_interval_minutes': 3,
     'min_signal_confidence': 0.85,
-    'target_profit_pct': 0.12,
+    'target_profit_pct': 0.15,
     'stop_loss_pct': 0.06,
     'max_trade_duration_minutes': 10,
     'max_daily_trades': 30,
