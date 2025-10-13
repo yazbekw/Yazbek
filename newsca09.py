@@ -610,7 +610,7 @@ class SimpleTradeManager:
                     self.check_trade_limits()
                     self.check_trade_duration()
                     self.cleanup_closed_trades()
-                    time.sleep(20)  # التحقق كل دقيقة
+                    time.sleep(10)  # التحقق كل دقيقة
                 except Exception as e:
                     logger.error(f"❌ خطأ في مراقبة الصفقات: {e}")
                     time.sleep(60)
