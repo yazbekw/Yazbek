@@ -425,19 +425,22 @@ class AdvancedMACDSignalGenerator:
         }
     
     def _calculate_rsi(self, prices, period):
-        """حساب RSI"""
+        """حساب RSI بشكل صحيح"""
         delta = prices.diff()
+    
         gain = delta.where(delta > 0, 0)
         loss = -delta.where(delta < 0, 0)
-        
-        avg_gain = gain.rolling(period).mean()
-        avg_loss = loss.rolling(period).mean()
-        
+    
+        # التصحيح: استخدام EWM (Exponential Moving Average) بدلاً من rolling
+        avg_gain = gain.ewm(alpha=1/period, adjust=False).mean()
+        avg_loss = loss.ewm(alpha=1/period, adjust=False).mean()
+    
         rs = avg_gain / (avg_loss + 1e-10)
         rsi = 100 - (100 / (1 + rs))
-        
-        return rsi.iloc[-1] if not rsi.empty else 50
     
+        # التصحيح: إرجاع السلسلة كاملة
+        return rsi
+
     def _analyze_macd_status(self, indicators, data):
         """🆕 تحليل حالة الماكد الشاملة"""
         macd_above_signal = indicators['macd'] > indicators['macd_signal']
@@ -475,8 +478,7 @@ class AdvancedMACDSignalGenerator:
         is_bearish_candle = indicators['current_close'] < indicators['current_open']
     
         # إشارة شراء أساسية - التقاطع الفعلي فقط
-        if ema9_cross_above_21 and macd_status['bullish']:
-            self.trend_manager.log_macd_signal(symbol, 'BASE_CROSSOVER', macd_status, 'BUY_SIGNAL')
+        if ema9_cross_above_21 and indicators['rsi'] > 50 and macd_status['bullish']:            self.trend_manager.log_macd_signal(symbol, 'BASE_CROSSOVER', macd_status, 'BUY_SIGNAL')
         
             return {
                 'symbol': symbol,
