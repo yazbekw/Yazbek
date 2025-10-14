@@ -773,85 +773,111 @@ class AdvancedMACDTradeManager:
         except Exception as e:
             logger.error(f"❌ خطأ في التحقق من الإشارات المعاكسة: {e}")
             return False
+
+    def verify_active_trades_with_exchange(self):
+        """🆕 التحقق من تطابق الصفقات النشطة مع البنance"""
+        try:
+            account_info = self.client.futures_account()
+            positions = {p['symbol']: float(p['positionAmt']) for p in account_info['positions']}
+        
+            for symbol, trade in list(self.active_trades.items()):
+                if trade['status'] != 'open':
+                    continue
+                
+                current_position = positions.get(symbol, 0)
+                trade_quantity = trade['quantity']
+             
+                # التحقق من تطابق الكميات
+                if trade['side'] == 'LONG' and abs(current_position) < trade_quantity * 0.9:
+                    logger.warning(f"⚠️ عدم تطابق: {symbol} - الصفقة: {trade_quantity}, المركز: {current_position}")
+                    # إغلاق الصفقة في النظام الداخلي
+                    current_price = self._get_current_price(symbol)
+                    if current_price:
+                        self.close_trade(symbol, "تصحيح عدم التطابق مع البنance", current_price)
+            
+                elif trade['side'] == 'SHORT' and abs(current_position) < trade_quantity * 0.9:
+                    logger.warning(f"⚠️ عدم تطابق: {symbol} - الصفقة: {trade_quantity}, المركز: {current_position}")
+                    current_price = self._get_current_price(symbol)
+                    if current_price:
+                        self.close_trade(symbol, "تصحيح عدم التطابق مع البنance", current_price)
+                    
+        except Exception as e:
+            logger.error(f"❌ خطأ في التحقق من التطابق: {e}")
     
     def start_trade_monitoring(self):
-        """بدء مراقبة الصفقات مع الماكد - معدل لمراقبة كل دقيقة"""
+        """بدء مراقبة الصفقات مع التحقق المحسن"""
         def monitor():
             while self.monitoring_active:
                 try:
                     current_time = datetime.now(damascus_tz)
-                    # 🆕 التحقق كل دقيقة بدلاً من 10 ثواني
                     if (current_time - self.last_monitor_check).total_seconds() >= 60:
                         self._check_limits_and_duration()
-                        self._cleanup_closed_trades()
+                        self._cleanup_closed_trades()  # 🆕 التنظيف المحسن
+                        self.verify_active_trades_with_exchange()  # 🆕 التحقق من التطابق
                         self.trend_manager.cleanup_expired_trends()
                         self.last_monitor_check = current_time
-                    
-                    time.sleep(10)  # نوم قصير بين الدورات
+                
+                    time.sleep(10)
                 except Exception as e:
                     logger.error(f"❌ خطأ في المراقبة: {e}")
-                    time.sleep(30)
-        
-        threading.Thread(target=monitor, daemon=True).start()
-        logger.info("✅ بدء مراقبة الصفقات النشطة مع الماكد (كل دقيقة)")
+                    time.sleep(30)    
+        def _check_limits_and_duration(self):
+            """التحقق من الحدود والمدة مع الإغلاق المبكر بالماكد - معدل للتأكد من الإغلاق"""
+            current_time = datetime.now(damascus_tz)
     
-    def _check_limits_and_duration(self):
-        """التحقق من الحدود والمدة مع الإغلاق المبكر بالماكد - معدل للتأكد من الإغلاق"""
-        current_time = datetime.now(damascus_tz)
-    
-        for symbol, trade in list(self.active_trades.items()):
-            if trade['status'] != 'open':
-                continue
+            for symbol, trade in list(self.active_trades.items()):
+                if trade['status'] != 'open':
+                    continue
         
-            current_price = self._get_current_price(symbol)
-            if not current_price:
-                continue
+                current_price = self._get_current_price(symbol)
+                if not current_price:
+                    continue
         
-            entry_price = trade['entry_price']
-            direction = trade['side']
+                entry_price = trade['entry_price']
+                direction = trade['side']
         
-            if direction == 'LONG':
-                pnl_pct = (current_price - entry_price) / entry_price * 100
+                if direction == 'LONG':
+                    pnl_pct = (current_price - entry_price) / entry_price * 100
             
-                # 🛑 التحقق من وقف الخسارة أولاً
-                if current_price <= trade['stop_loss_price']:
-                    logger.info(f"🛑 إغلاق وقف خسارة لـ {symbol}: {current_price} <= {trade['stop_loss_price']}")
-                    self.close_trade(symbol, f"وقف الخسارة ({pnl_pct:+.2f}%)", current_price)
-                    continue
+                    # 🛑 التحقق من وقف الخسارة أولاً
+                    if current_price <= trade['stop_loss_price']:
+                        logger.info(f"🛑 إغلاق وقف خسارة لـ {symbol}: {current_price} <= {trade['stop_loss_price']}")
+                        self.close_trade(symbol, f"وقف الخسارة ({pnl_pct:+.2f}%)", current_price)
+                        continue
                 
-                # ثم جني الربح
-                if current_price >= trade['take_profit_price']:
-                    logger.info(f"🟢 إغلاق جني ربح لـ {symbol}: {current_price} >= {trade['take_profit_price']}")
-                    self.close_trade(symbol, f"جني الربح ({pnl_pct:+.2f}%)", current_price)
-                    continue
+                    # ثم جني الربح
+                    if current_price >= trade['take_profit_price']:
+                        logger.info(f"🟢 إغلاق جني ربح لـ {symbol}: {current_price} >= {trade['take_profit_price']}")
+                        self.close_trade(symbol, f"جني الربح ({pnl_pct:+.2f}%)", current_price)
+                        continue
                 
-            else:  # SHORT
-                pnl_pct = (entry_price - current_price) / entry_price * 100
+                else:  # SHORT
+                    pnl_pct = (entry_price - current_price) / entry_price * 100
             
-                # 🛑 التحقق من وقف الخسارة أولاً
-                if current_price >= trade['stop_loss_price']:
-                    logger.info(f"🛑 إغلاق وقف خسارة لـ {symbol}: {current_price} >= {trade['stop_loss_price']}")
-                    self.close_trade(symbol, f"وقف الخسارة ({pnl_pct:+.2f}%)", current_price)
-                    continue
+                    # 🛑 التحقق من وقف الخسارة أولاً
+                    if current_price >= trade['stop_loss_price']:
+                        logger.info(f"🛑 إغلاق وقف خسارة لـ {symbol}: {current_price} >= {trade['stop_loss_price']}")
+                        self.close_trade(symbol, f"وقف الخسارة ({pnl_pct:+.2f}%)", current_price)
+                        continue
                 
-                # ثم جني الربح
-                if current_price <= trade['take_profit_price']:
-                    logger.info(f"🟢 إغلاق جني ربح لـ {symbol}: {current_price} <= {trade['take_profit_price']}")
-                    self.close_trade(symbol, f"جني الربح ({pnl_pct:+.2f}%)", current_price)
-                    continue
+                    # ثم جني الربح
+                    if current_price <= trade['take_profit_price']:
+                        logger.info(f"🟢 إغلاق جني ربح لـ {symbol}: {current_price} <= {trade['take_profit_price']}")
+                        self.close_trade(symbol, f"جني الربح ({pnl_pct:+.2f}%)", current_price)
+                        continue
+          
+                # 🛑 ثم التحقق من الإغلاق المبكر بالماكد
+                if TRADING_SETTINGS['macd_early_exit']:
+                    macd_data = self._get_current_macd_data(symbol)
+                    if macd_data and self._check_macd_early_exit(symbol, trade, macd_data, current_price):
+                        continue
         
-            # 🛑 ثم التحقق من الإغلاق المبكر بالماكد
-            if TRADING_SETTINGS['macd_early_exit']:
-                macd_data = self._get_current_macd_data(symbol)
-                if macd_data and self._check_macd_early_exit(symbol, trade, macd_data, current_price):
+                # 🛑 أخيراً التحقق من المدة
+                trade_duration = (current_time - trade['timestamp']).total_seconds() / 60
+                if trade_duration >= TRADING_SETTINGS['max_trade_duration_minutes']:
+                    logger.info(f"⏰ إغلاق لانتهاء المدة لـ {symbol}: {trade_duration:.1f} دقيقة")
+                    self.close_trade(symbol, f"انتهت المدة ({trade_duration:.1f} دقيقة)", current_price)
                     continue
-        
-            # 🛑 أخيراً التحقق من المدة
-            trade_duration = (current_time - trade['timestamp']).total_seconds() / 60
-            if trade_duration >= TRADING_SETTINGS['max_trade_duration_minutes']:
-                logger.info(f"⏰ إغلاق لانتهاء المدة لـ {symbol}: {trade_duration:.1f} دقيقة")
-                self.close_trade(symbol, f"انتهت المدة ({trade_duration:.1f} دقيقة)", current_price)
-                continue
                 
     def _get_current_macd_data(self, symbol):
         """الحصول على بيانات الماكد الحالية"""
@@ -905,24 +931,31 @@ class AdvancedMACDTradeManager:
         return rsi.iloc[-1] if not rsi.empty else 50
     
     def _cleanup_closed_trades(self):
-        """تنظيف الصفقات المغلقة - معدل ليكون أكثر فعالية"""
+        """🆕 تنظيف محسن للصفقات المغلقة - يدعم صفقات متعددة لنفس العملة"""
         try:
             account_info = self.client.futures_account()
-            positions = account_info['positions']
+            positions = {p['symbol']: float(p['positionAmt']) for p in account_info['positions']}
+        
+            for symbol, trade in list(self.active_trades.items()):
+                if trade['status'] != 'open':
+                    continue
+                
+                # 🆕 التحقق إذا كانت الصفقة محددة مغلقة في البنance
+                current_position = positions.get(symbol, 0)
             
-            active_symbols = set()
-            for position in positions:
-                if float(position['positionAmt']) != 0:
-                    active_symbols.add(position['symbol'])
-            
-            for symbol in list(self.active_trades.keys()):
-                if symbol not in active_symbols and self.active_trades[symbol]['status'] == 'open':
-                    logger.info(f"🔄 اكتشاف إغلاق خارجي لـ {symbol}")
+                # إذا كانت الصفقة شراء وكميتها غير موجودة في المركز الحالي
+                if trade['side'] == 'LONG' and current_position <= 0:
+                    logger.info(f"🔄 اكتشاف إغلاق خارجي لصفقة شراء {symbol}")
                     self._handle_external_close(symbol)
-                    
+            
+                # إذا كانت الصفقة بيع وكميتها غير موجودة في المركز الحالي  
+                elif trade['side'] == 'SHORT' and current_position >= 0:
+                    logger.info(f"🔄 اكتشاف إغلاق خارجي لصفقة بيع {symbol}")
+                    self._handle_external_close(symbol)
+                
         except Exception as e:
-            logger.error(f"❌ خطأ في التنظيف: {e}")
-    
+            logger.error(f"❌ خطأ في التنظيف المحسن: {e}")    
+  
     def _handle_external_close(self, symbol):
         """معالجة الإغلاق الخارجي"""
         try:
