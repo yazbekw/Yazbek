@@ -297,37 +297,38 @@ class AdvancedMACDSignalGenerator:
         self.trend_manager = MACDTrendManager()
     
     def generate_signal(self, symbol, data, current_price):
-        """توليد إشارات متقدمة مع الماكد"""
+        """توليد إشارات متقدمة مع الماكد والتنبؤ بالتقاطعات"""
         try:
             if len(data) < 26:  # تحتاج 26 نقطة للماكد
                 return None
-            
+        
             indicators = self._calculate_advanced_indicators(data)
             macd_status = self._analyze_macd_status(indicators, data)
-            
+        
             # البحث عن إشارات بأنواعها
             signals = []
-            
+        
             # الإشارة الأساسية (التقاطع)
             base_signal = self._analyze_base_signal(indicators, symbol, current_price, macd_status, data)
             if base_signal:
                 signals.append(base_signal)
-
-            base_signal = self._analyze_base_signal(indicators, symbol, current_price, macd_status, data)
-            if base_signal:
-                signals.append(base_signal)
-            
+        
+            # التنبؤ بالتقاطعات (الجديد)
+            prediction_signal = self.predict_crossover(symbol, data, current_price)
+            if prediction_signal:
+                signals.append(prediction_signal)
+        
             # الإشارات الإضافية في الترند النشط
             additional_signals = self._analyze_additional_signals(indicators, symbol, current_price, data, macd_status)
             signals.extend(additional_signals)
-            
+        
             # إرجاع أفضل إشارة
             if signals:
                 best_signal = max(signals, key=lambda x: x.get('priority', 0))
                 return best_signal
-            
+        
             return None
-            
+        
         except Exception as e:
             logger.error(f"❌ خطأ في توليد إشارة متقدمة لـ {symbol}: {e}")
             return None
@@ -2198,22 +2199,11 @@ class AdvancedMACDTrendBot:
         return opportunities
 
     def execute_trading_cycle(self):
-        """تنفيذ دورة التداول المتقدمة مع الماكد"""
+        """تنفيذ دورة التداول المتقدمة مع التنبؤات"""
         try:
             opportunities = self.scan_market()
-            
-            executed_trades = 0
-            for signal in opportunities:
-                if self.trade_manager.get_active_trades_count() >= TRADING_SETTINGS['max_active_trades']:
-                    break
-                    
-                if self.execute_trade(signal):
-                    executed_trades += 1
-                    if signal['signal_type'] == 'BASE_CROSSOVER':
-                        break  # نكتفي بصققة واحدة أساسية في الدورة
-            
-    
-
+        
+            # معالجة التنبؤات أولاً
             for signal in opportunities:
                 if signal.get('signal_type') == 'CROSSOVER_PREDICTION':
                     self._handle_crossover_prediction(signal)
@@ -2222,19 +2212,19 @@ class AdvancedMACDTrendBot:
             for signal in opportunities:
                 if self.trade_manager.get_active_trades_count() >= TRADING_SETTINGS['max_active_trades']:
                     break
-
-            if self.execute_trade(signal):
+                
+                if self.execute_trade(signal):
                     executed_trades += 1
                     if signal['signal_type'] == 'BASE_CROSSOVER':
-                        break
+                        break  # نكتفي بصققة واحدة أساسية في الدورة
         
-            # إضافة تنظيف التنبيهات القديمة
+            # تنظيف التنبيهات القديمة
             self.cleanup_prediction_alerts()
         
             wait_time = TRADING_SETTINGS['rescan_interval_minutes'] * 60
             logger.info(f"⏳ انتظار {wait_time} ثانية للدورة القادمة...")
             time.sleep(wait_time)
-            
+        
         except Exception as e:
             logger.error(f"❌ خطأ في دورة التداول المتقدمة: {e}")
             time.sleep(60)
