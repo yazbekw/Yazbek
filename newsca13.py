@@ -31,7 +31,7 @@ TRADING_SETTINGS = {
     'max_trade_duration_minutes': 10,
     'max_daily_trades': 30,
     'cooldown_after_loss': 3,
-    'max_trades_per_symbol': 2,
+    'max_trades_per_symbol': 3,
     'max_trend_duration_minutes': 60,
     'min_trade_gap_minutes': 5,
     'macd_early_exit': True,  # 🆕 إغلاق مبكر بالماكد
