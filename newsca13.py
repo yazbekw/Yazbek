@@ -23,7 +23,7 @@ TRADING_SETTINGS = {
     'symbols': ["ETHUSDT","BNBUSDT"],
     'used_balance_per_trade': 6,
     'max_leverage': 8,
-    'max_active_trades': 2,
+    'max_active_trades': 3,
     'data_interval': '5m',
     'rescan_interval_minutes': 1,
     'target_profit_pct': 0.25,
@@ -789,23 +789,83 @@ class AdvancedMACDTradeManager:
         except Exception as e:
             logger.error(f"❌ خطأ في التحقق من الإشارات المعاكسة: {e}")
             return False
+
+    def enhanced_trade_monitoring(self):
+        """🆕 مراقبة محسنة للصفقات مع معالجة الأخطاء"""
+        try:
+            current_time = datetime.now(damascus_tz)
+        
+            # الحصول على أحدث بيانات الصفقات من البنance
+            account_info = self.client.futures_account()
+            positions = {p['symbol']: float(p['positionAmt']) for p in account_info['positions']}
+        
+            for symbol, trade in list(self.active_trades.items()):
+                if trade['status'] != 'open':
+                    continue
+                  
+                current_price = self._get_current_price(symbol)
+                if not current_price:
+                    continue
+                
+                # 🎯 التحقق من وقف الخسارة وجني الربح
+                should_close = False
+                close_reason = ""
+            
+                if trade['side'] == 'LONG':
+                    if current_price <= trade['stop_loss_price']:
+                        should_close = True
+                        close_reason = f"وقف خسارة ({current_price:.4f} <= {trade['stop_loss_price']:.4f})"
+                    elif current_price >= trade['take_profit_price']:
+                        should_close = True
+                        close_reason = f"جني ربح ({current_price:.4f} >= {trade['take_profit_price']:.4f})"
+                    
+                else:  # SHORT
+                    if current_price >= trade['stop_loss_price']:
+                        should_close = True
+                        close_reason = f"وقف خسارة ({current_price:.4f} >= {trade['stop_loss_price']:.4f})"
+                    elif current_price <= trade['take_profit_price']:
+                        should_close = True
+                        close_reason = f"جني ربح ({current_price:.4f} <= {trade['take_profit_price']:.4f})"
+            
+                # 🎯 التحقق من المدة
+                trade_duration = (current_time - trade['timestamp']).total_seconds() / 60
+                if trade_duration >= TRADING_SETTINGS['max_trade_duration_minutes']:
+                    should_close = True
+                    close_reason = f"انتهت المدة ({trade_duration:.1f} دقيقة)"
+            
+                # 🎯 إغلاق الصفقة إذا لزم الأمر
+                if should_close:
+                    logger.info(f"🔄 محاولة إغلاق {symbol}: {close_reason}")
+                    success = self.close_trade(symbol, close_reason, current_price)
+                
+                    if not success:
+                        logger.warning(f"⚠️ فشل الإغلاق الأول لـ {symbol}, إعادة المحاولة...")
+                        # محاولة ثانية بعد 5 ثواني
+                        time.sleep(5)
+                        current_price_retry = self._get_current_price(symbol)
+                        if current_price_retry:
+                            self.close_trade(symbol, f"إعادة محاولة - {close_reason}", current_price_retry)
+                        
+        except Exception as e:
+            logger.error(f"❌ خطأ في المراقبة المحسنة: {e}")
     
     def start_trade_monitoring(self):
-        """بدء مراقبة الصفقات مع الماكد"""
+        """بدء مراقبة الصفقات مع المراقبة المحسنة"""
         def monitor():
             while self.monitoring_active:
                 try:
-                    self._check_limits_and_duration()
-                    self._cleanup_closed_trades()
-                    self.trend_manager.cleanup_expired_trends()
+                    current_time = datetime.now(damascus_tz)
+                    if (current_time - self.last_monitor_check).total_seconds() >= 60:
+                        self.enhanced_trade_monitoring()  # 🆕 استخدم المراقبة المحسنة
+                        self._cleanup_closed_trades()
+                        self.trend_manager.cleanup_expired_trends()
+                        self.last_monitor_check = current_time
+                
                     time.sleep(10)
                 except Exception as e:
                     logger.error(f"❌ خطأ في المراقبة: {e}")
-                    time.sleep(30)
-        
-        threading.Thread(target=monitor, daemon=True).start()
-        logger.info("✅ بدء مراقبة الصفقات النشطة مع الماكد")
-    
+                    time.sleep(30) 
+                    
     def _check_limits_and_duration(self):
         """التحقق من الحدود والمدة مع الإغلاق المبكر بالماكد - معدل"""
         current_time = datetime.now(damascus_tz)
