@@ -465,69 +465,77 @@ class AdvancedMACDSignalGenerator:
             'bearish': not macd_above_signal and not histogram_positive
         }
     
-    def _analyze_base_signal(self, indicators, symbol, current_price, macd_status):
-        """تحليل الإشارة الأساسية (التقاطع) مع الماكد - معدل"""
-        # التحقق من التقاطع الفعلي فقط
+    def _analyze_base_signal(self, indicators, symbol, current_price, macd_status, data):
+        """تحليل الإشارة الأساسية مع شروط الشمعة السابقة المحسنة"""
         ema9_cross_above_21 = (indicators['ema9'] > indicators['ema21'] and 
                               indicators['ema9_prev'] <= indicators['ema21_prev'])
         ema9_cross_below_21 = (indicators['ema9'] < indicators['ema21'] and 
                               indicators['ema9_prev'] >= indicators['ema21_prev'])
+
+        # 🎯 الشروط الجديدة للشمعة السابقة
+        prev_candle_bullish = indicators['prev_close'] > indicators['prev_open']  # شمعة سابقة صاعدة
+        prev_candle_bearish = indicators['prev_close'] < indicators['prev_open']  # شمعة سابقة هابطة
     
-        # 🟢 حساب نوع الشمعة الحالية
-        is_bullish_candle = indicators['current_close'] > indicators['current_open']
-        is_bearish_candle = indicators['current_close'] < indicators['current_open']
+        # 🎯 حساب منتصف الشمعة السابقة
+        prev_candle_mid = (indicators['prev_high'] + indicators['prev_low']) / 2
     
-        # 🟢 حساب قوة الشمعة (نسبة الجسم إلى الشمعة كاملة)
-        candle_body = abs(indicators['current_close'] - indicators['current_open'])
-        candle_range = indicators['current_high'] - indicators['current_low'] if 'current_high' in indicators else candle_body * 2
-        candle_strength = candle_body / (candle_range + 1e-10)  # تجنب القسمة على صفر
-    
-        # 🟢 شروط إضافية للشمعة
-        strong_bullish_candle = is_bullish_candle and candle_strength > 0.3  # شمعة قوية
-        strong_bearish_candle = is_bearish_candle and candle_strength > 0.3  # شمعة قوية
-    
-        # 🟢 إشارة شراء أساسية - مع تأكيد الشمعة
+        # 🎯 شرط الاتجاه بعد التقاطع
+        price_above_prev_mid = current_price > prev_candle_mid  # للشراء
+        price_below_prev_mid = current_price < prev_candle_mid  # للبيع
+
+        # 🆕 شروط محسنة للصفقة الأولى
+        volume_condition = indicators['volume'] > indicators['volume_avg'] * TRADING_SETTINGS['first_trade_requirements']['min_volume_ratio']
+        rsi_strength_condition_buy = indicators['rsi'] > (50 + TRADING_SETTINGS['first_trade_requirements']['min_rsi_strength'])
+        rsi_strength_condition_sell = indicators['rsi'] < (50 - TRADING_SETTINGS['first_trade_requirements']['min_rsi_strength'])
+
+        # 🟢 إشارة شراء محسنة
         if (ema9_cross_above_21 and 
-            indicators['rsi'] > 50 and 
+            prev_candle_bullish and          # 🎯 شمعة سابقة صاعدة
+            price_above_prev_mid and         # 🎯 السعر فوق منتصف الشمعة السابقة
+            rsi_strength_condition_buy and 
             macd_status['bullish'] and 
-            strong_bullish_candle):  # 🎯 شرط الشمعة المضاف
-        
+            volume_condition):
+    
             self.trend_manager.log_macd_signal(symbol, 'BASE_CROSSOVER', macd_status, 'BUY_SIGNAL')
-        
+    
             return {
                 'symbol': symbol,
                 'direction': 'LONG',
                 'confidence': 0.95,
-                'reason': f'تقاطع فعلي - EMA 9 فوق EMA 21 + شمعة صاعدة قوية (قوة: {candle_strength:.1%})',
+                'reason': f'تقاطع صاعد + شمعة سابقة صاعدة + سعر فوق المنصف ({current_price:.4f} > {prev_candle_mid:.4f})',
                 'indicators': indicators,
                 'timestamp': datetime.now(damascus_tz),
                 'current_price': current_price,
                 'signal_type': 'BASE_CROSSOVER',
                 'priority': 100,
-                'macd_status': macd_status
+                'macd_status': macd_status,
+                'improved_signal': True
             }
-    
-        # 🟢 إشارة بيع أساسية - مع تأكيد الشمعة
+
+        # 🔴 إشارة بيع محسنة
         if (ema9_cross_below_21 and 
-            indicators['rsi'] < 50 and 
+            prev_candle_bearish and          # 🎯 شمعة سابقة هابطة
+            price_below_prev_mid and         # 🎯 السعر تحت منتصف الشمعة السابقة
+            rsi_strength_condition_sell and 
             macd_status['bearish'] and 
-            strong_bearish_candle):  # 🎯 شرط الشمعة المضاف
-        
+            volume_condition):
+    
             self.trend_manager.log_macd_signal(symbol, 'BASE_CROSSOVER', macd_status, 'SELL_SIGNAL')
-        
+    
             return {
                 'symbol': symbol,
                 'direction': 'SHORT',
                 'confidence': 0.95,
-                'reason': f'تقاطع فعلي - EMA 9 تحت EMA 21 + شمعة هابطة قوية (قوة: {candle_strength:.1%})',
+                'reason': f'تقاطع هابط + شمعة سابقة هابطة + سعر تحت المنصف ({current_price:.4f} < {prev_candle_mid:.4f})',
                 'indicators': indicators,
                 'timestamp': datetime.now(damascus_tz),
                 'current_price': current_price,
                 'signal_type': 'BASE_CROSSOVER',
                 'priority': 100,
-                'macd_status': macd_status
+                'macd_status': macd_status,
+                'improved_signal': True
             }
-    
+
         return None
     
     def _analyze_additional_signals(self, indicators, symbol, current_price, data, macd_status):
