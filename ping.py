@@ -12,6 +12,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 # كل الروابط هنا
 URLS = [
     "https://mybot-1-61u6.onrender.com",
+    "https://yazbek-1j7v.onrender.com",
     "https://yazbekw965.onrender.com",
     "https://monitor-ocgp.onrender.com"
 ]
