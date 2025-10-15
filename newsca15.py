@@ -761,74 +761,102 @@ class AdvancedMACDTradeManager:
                 return entry_price * 0.998, entry_price * 1.002
     
     def check_and_handle_opposite_signals(self, symbol, new_direction):
-        """التحقق من وجود صفقة معاكسة وإغلاقها - معدل"""
+        """التحقق من وجود صفقة معاكسة وإغلاقها - معدل ومصحح"""
         try:
-            if self.is_symbol_trading(symbol):
-                current_trade = self.get_trade(symbol)
-                current_direction = current_trade['side']
+            if not self.is_symbol_trading(symbol):
+                return False
             
-                # 🛑 إذا كانت الإشارة الجديدة معاكسة للصفقة الحالية
-                if current_direction != new_direction:
-                    current_price = self._get_current_price(symbol)
-                    if current_price:
-                        logger.info(f"🔄 إشارة معاكسة لـ {symbol}: {current_direction} -> {new_direction}")
-                    
-                        # حساب PnL الحالي
-                        entry_price = current_trade['entry_price']
-                        if current_direction == 'LONG':
-                            current_pnl = (current_price - entry_price) / entry_price * 100
-                        else:
-                            current_pnl = (entry_price - current_price) / entry_price * 100
-                    
-                        # إغلاق الصفقة الحالية
-                        close_reason = f"إشارة معاكسة ({new_direction}) - PnL: {current_pnl:+.2f}%"
-                        self.close_trade(symbol, close_reason, current_price)
-                    
-                        # إنهاء الترند الحالي
-                        self.trend_manager.end_trend(symbol, "إشارة معاكسة")
-                    
-                        # 🛑 انتظار قبل فتح الصفقة الجديدة
-                        time.sleep(3)
-                        return True
+            current_trade = self.get_trade(symbol)
+        
+            # ✅ فحص إضافي للتأكد من وجود الصفقة
+            if not current_trade or current_trade['status'] != 'open':
+                return False
+            
+            current_direction = current_trade['side']
+        
+            # 🛑 إذا كانت الإشارة الجديدة معاكسة للصفقة الحالية
+            if current_direction != new_direction:
+                current_price = self._get_current_price(symbol)
+                if not current_price:
+                    logger.warning(f"⚠️ لا يمكن الحصول على السعر الحالي لـ {symbol}")
+                    return False
+            
+                logger.info(f"🔄 إشارة معاكسة لـ {symbol}: {current_direction} -> {new_direction}")
+            
+                # حساب PnL الحالي
+                entry_price = current_trade['entry_price']
+                if current_direction == 'LONG':
+                    current_pnl = (current_price - entry_price) / entry_price * 100
+                else:
+                    current_pnl = (entry_price - current_price) / entry_price * 100
+            
+                # إغلاق الصفقة الحالية
+                close_reason = f"إشارة معاكسة ({new_direction}) - PnL: {current_pnl:+.2f}%"
+                close_success = self.close_trade(symbol, close_reason, current_price)
+            
+                if close_success:
+                    # إنهاء الترند الحالي
+                    self.trend_manager.end_trend(symbol, "إشارة معاكسة")
+                
+                    # 🛑 انتظار قبل فتح الصفقة الجديدة
+                    time.sleep(3)
+                    return True
+                else:
+                    logger.error(f"❌ فشل إغلاق الصفقة المعاكسة لـ {symbol}")
+                    return False
+                
             return False
+        
         except Exception as e:
-            logger.error(f"❌ خطأ في التحقق من الإشارات المعاكسة: {e}")
+            logger.error(f"❌ خطأ في التحقق من الإشارات المعاكسة لـ {symbol}: {e}")
             return False
 
     def enhanced_trade_monitoring(self):
-        """🆕 مراقبة محسنة للصفقات مع معالجة الأخطاء"""
+        """🆕 مراقبة محسنة للصفقات مع معالجة الأخطاء - مصححة"""
         try:
             current_time = datetime.now(damascus_tz)
+            self.last_monitor_check = current_time  # ✅ تحديث الوقت
         
-            # الحصول على أحدث بيانات الصفقات من البنance
-            account_info = self.client.futures_account()
-            positions = {p['symbol']: float(p['positionAmt']) for p in account_info['positions']}
+            # ✅ معالجة أخطاء جلب بيانات الحساب
+            try:
+                account_info = self.client.futures_account()
+                positions = {p['symbol']: float(p['positionAmt']) for p in account_info['positions']}
+            except Exception as e:
+                logger.error(f"❌ فشل جلب بيانات الحساب للمراقبة: {e}")
+                return
         
+            # ✅ نسخ القائمة لتجنب التعديل أثناء التكرار
             for symbol, trade in list(self.active_trades.items()):
-                if trade['status'] != 'open':
+                if trade.get('status') != 'open':  # ✅ استخدام get الآمن
                     continue
-                  
+              
                 current_price = self._get_current_price(symbol)
                 if not current_price:
+                    logger.warning(f"⚠️ لا يمكن الحصول على السعر الحالي لـ {symbol}")
                     continue
-                
+            
                 # 🎯 التحقق من وقف الخسارة وجني الربح
                 should_close = False
                 close_reason = ""
+                entry_price = trade.get('entry_price', 0)
+            
+                if entry_price == 0:
+                    logger.warning(f"⚠️ سعر الدخول صفر لـ {symbol}")
+                    continue
             
                 if trade['side'] == 'LONG':
-                    if current_price <= trade['stop_loss_price']:
+                    if current_price <= trade.get('stop_loss_price', 0):
                         should_close = True
                         close_reason = f"وقف خسارة ({current_price:.4f} <= {trade['stop_loss_price']:.4f})"
-                    elif current_price >= trade['take_profit_price']:
+                    elif current_price >= trade.get('take_profit_price', float('inf')):
                         should_close = True
                         close_reason = f"جني ربح ({current_price:.4f} >= {trade['take_profit_price']:.4f})"
-                    
+                
                 else:  # SHORT
-                    if current_price >= trade['stop_loss_price']:
+                    if current_price >= trade.get('stop_loss_price', float('inf')):
                         should_close = True
                         close_reason = f"وقف خسارة ({current_price:.4f} >= {trade['stop_loss_price']:.4f})"
-                    elif current_price <= trade['take_profit_price']:
+                    elif current_price <= trade.get('take_profit_price', 0):
                         should_close = True
                         close_reason = f"جني ربح ({current_price:.4f} <= {trade['take_profit_price']:.4f})"
             
@@ -842,7 +870,7 @@ class AdvancedMACDTradeManager:
                 if should_close:
                     logger.info(f"🔄 محاولة إغلاق {symbol}: {close_reason}")
                     success = self.close_trade(symbol, close_reason, current_price)
-                
+            
                     if not success:
                         logger.warning(f"⚠️ فشل الإغلاق الأول لـ {symbol}, إعادة المحاولة...")
                         # محاولة ثانية بعد 5 ثواني
@@ -852,8 +880,8 @@ class AdvancedMACDTradeManager:
                             self.close_trade(symbol, f"إعادة محاولة - {close_reason}", current_price_retry)
                         
         except Exception as e:
-            logger.error(f"❌ خطأ في المراقبة المحسنة: {e}")
-    
+            logger.error(f"❌ خطأ في المراقبة المحسنة: {e}")  
+        
     def start_trade_monitoring(self):
         """بدء مراقبة الصفقات مع المراقبة المحسنة"""
         def monitor():
@@ -926,59 +954,98 @@ class AdvancedMACDTradeManager:
                 continue
                 
     def _get_current_macd_data(self, symbol):
-        """🆕 الحصول على بيانات الماكد الحالية"""
+        """🆕 الحصول على بيانات الماكد الحالية - مصححة"""
         try:
-            from AdvancedMACDTrendBot import AdvancedMACDTrendBot
-            bot = AdvancedMACDTrendBot.get_instance()
-            if bot:
-                data = bot.get_historical_data(symbol, TRADING_SETTINGS['data_interval'], 26)
-                if data is not None:
+            # ✅ استخدام المرجع الممرر بدلاً من الاستيراد الدائري
+            if hasattr(self, 'bot_instance') and self.bot_instance:
+                data = self.bot_instance.get_historical_data(symbol, TRADING_SETTINGS['data_interval'], 26)
+                if data is not None and len(data) >= 26:
                     signal_generator = AdvancedMACDSignalGenerator()
                     indicators = signal_generator._calculate_advanced_indicators(data)
                     return signal_generator._analyze_macd_status(indicators, data)
+        
+            # ✅ حل بديل إذا لم يكن bot_instance متوفراً
+            data = self._get_historical_data_direct(symbol)
+            if data is not None and len(data) >= 26:
+                signal_generator = AdvancedMACDSignalGenerator()
+                indicators = signal_generator._calculate_advanced_indicators(data)
+                return signal_generator._analyze_macd_status(indicators, data)
+            
         except Exception as e:
             logger.error(f"❌ خطأ في جلب بيانات الماكد لـ {symbol}: {e}")
         return None
-    
-    def _check_macd_early_exit(self, symbol, trade, macd_data, current_price):
-        """🆕 التحقق من الإغلاق المبكر بالماكد"""
+
+    def _get_historical_data_direct(self, symbol):
+        """✅ دالة مساعدة لجلب البيانات التاريخية مباشرة"""
         try:
-            # الحصول على بيانات RSI الحالية
-            from AdvancedMACDTrendBot import AdvancedMACDTrendBot
-            bot = AdvancedMACDTrendBot.get_instance()
-            if bot:
-                data = bot.get_historical_data(symbol, TRADING_SETTINGS['data_interval'], 20)
-                if data is not None:
-                    current_rsi = data['close'].tail(14).apply(lambda x: 
-                        self._calculate_rsi(data['close'].tail(15), 14) if len(data) >= 15 else 50
-                    ).iloc[-1]
-                    
-                    should_exit, reason = self.trend_manager.should_early_exit(symbol, macd_data, current_rsi)
-                    if should_exit:
-                        self.close_trade(symbol, f"إغلاق مبكر: {reason}", current_price)
-                        return True
-        except Exception as e:
-            logger.error(f"❌ خطأ في التحقق من الإغلاق المبكر: {e}")
+            klines = self.client.futures_klines(
+                symbol=symbol,
+                interval=TRADING_SETTINGS['data_interval'],
+                limit=50
+            )
         
-        return False
+            if not klines:
+                return None
+        
+            data = pd.DataFrame(klines, columns=[
+                'timestamp', 'open', 'high', 'low', 'close', 'volume',
+                'close_time', 'quote_volume', 'trades', 'taker_buy_base',
+                'taker_buy_quote', 'ignore'
+            ])
+        
+            for col in ['open', 'high', 'low', 'close', 'volume']:
+                data[col] = pd.to_numeric(data[col], errors='coerce')
+        
+            return data.dropna()
+        
+        except Exception as e:
+            logger.error(f"❌ خطأ في جلب البيانات المباشرة لـ {symbol}: {e}")
+            return None
+
+    def _check_macd_early_exit(self, symbol, trade, macd_data, current_price):
+        """🆕 التحقق من الإغلاق المبكر بالماكد - مصححة"""
+        try:
+            if not macd_data:
+                return False
+            
+            # الحصول على بيانات RSI الحالية
+            data = self._get_historical_data_direct(symbol)
+            if data is not None and len(data) >= 15:
+                # ✅ حساب RSI بشكل آمن
+                current_rsi = self._calculate_rsi_safe(data['close'].tail(15), 14)
+            
+                should_exit, reason = self.trend_manager.should_early_exit(symbol, macd_data, current_rsi)
+                if should_exit:
+                    self.close_trade(symbol, f"إغلاق مبكر: {reason}", current_price)
+                    return True
+                
+        except Exception as e:
+            logger.error(f"❌ خطأ في التحقق من الإغلاق المبكر لـ {symbol}: {e}")
     
-    def _calculate_rsi(self, prices, period):
-        """حساب RSI مساعد"""
-        if len(prices) < period + 1:
+        return False
+
+    def _calculate_rsi_safe(self, prices, period):
+        """✅ حساب RSI آمن مع معالجة الأخطاء"""
+        try:
+            if len(prices) < period + 1:
+                return 50
+            
+            delta = prices.diff()
+            gain = (delta.where(delta > 0, 0)).fillna(0)
+            loss = (-delta.where(delta < 0, 0)).fillna(0)
+        
+            avg_gain = gain.rolling(window=period, min_periods=1).mean()
+            avg_loss = loss.rolling(window=period, min_periods=1).mean()
+        
+            rs = avg_gain / (avg_loss + 1e-10)
+            rsi = 100 - (100 / (1 + rs))
+        
+            return rsi.iloc[-1] if not rsi.empty else 50
+        
+        except Exception as e:
+            logger.error(f"❌ خطأ في حساب RSI: {e}")
             return 50
             
-        delta = prices.diff()
-        gain = (delta.where(delta > 0, 0)).fillna(0)
-        loss = (-delta.where(delta < 0, 0)).fillna(0)
-        
-        avg_gain = gain.rolling(window=period, min_periods=1).mean()
-        avg_loss = loss.rolling(window=period, min_periods=1).mean()
-        
-        rs = avg_gain / (avg_loss + 1e-10)
-        rsi = 100 - (100 / (1 + rs))
-        
-        return rsi.iloc[-1] if not rsi.empty else 50
-    
     def _cleanup_closed_trades(self):
         """تنظيف الصفقات المغلقة"""
         try:
@@ -1510,95 +1577,125 @@ class AdvancedMACDTrendBot:
             return False
 
     def execute_trade(self, signal):
-        """تنفيذ الصفقة في نظام الماكد المتقدم"""
+        """تنفيذ الصفقة في نظام الماكد المتقدم - مصححة"""
         try:
+            # ✅ فحص شامل للبيانات المطلوبة
+            required_keys = ['symbol', 'direction', 'signal_type', 'macd_status']
+            for key in required_keys:
+                if key not in signal:
+                    logger.error(f"❌ إشارة ناقصة البيانات: المفتاح {key} مفقود")
+                    return False
+        
             symbol = signal['symbol']
             direction = signal['direction']
             signal_type = signal['signal_type']
             macd_status = signal['macd_status']
+        
+            # ✅ فحص إضافي لقيم البيانات
+            if direction not in ['LONG', 'SHORT']:
+                logger.error(f"❌ اتجاه غير صالح: {direction}")
+                return False
             
             # 🆕 معالجة خاصة للإشارة الأساسية
             if signal_type == 'BASE_CROSSOVER':
                 # التحقق من وجود صفقة معاكسة وإغلاقها
                 trade_closed = self.trade_manager.check_and_handle_opposite_signals(symbol, direction)
-                
+            
                 if trade_closed:
                     logger.info(f"⏳ انتظار قليل بعد إغلاق الصفقة المعاكسة لـ {symbol}")
                     time.sleep(2)
-                
+            
                 # بدء ترند جديد مع حالة الماكد
                 self.trend_manager.start_new_trend(symbol, direction, signal_type, macd_status)
                 self.performance_stats['total_trends'] += 1
-            
+        
             # التحقق من إمكانية فتح الصفقة مع الماكد
             can_trade, reasons = self.can_open_trade(symbol, direction, signal_type, macd_status)
             if not can_trade:
                 logger.info(f"⏭️ تخطي {symbol} {direction} ({signal_type}): {', '.join(reasons)}")
                 return False
-            
+        
             current_price = self.get_current_price(symbol)
-            if not current_price:
+            if not current_price or current_price <= 0:
+                logger.error(f"❌ سعر غير صالح لـ {symbol}: {current_price}")
                 return False
-            
+        
             quantity = self.calculate_position_size(symbol, current_price)
-            if not quantity:
+            if not quantity or quantity <= 0:
+                logger.error(f"❌ كمية غير صالحة لـ {symbol}: {quantity}")
                 return False
-            
+        
             # تعيين الرافعة
-            self.set_leverage(symbol, TRADING_SETTINGS['max_leverage'])
-            
+            leverage_success = self.set_leverage(symbol, TRADING_SETTINGS['max_leverage'])
+            if not leverage_success:
+                logger.warning(f"⚠️ فشل تعيين الرافعة لـ {symbol}, المتابعة بأي حال")
+        
             side = 'BUY' if direction == 'LONG' else 'SELL'
-            
-            logger.info(f"⚡ تنفيذ صفقة {symbol}: {direction} | النوع: {signal_type} | الماكد: {macd_status['bullish']}")
-            
-            order = self.client.futures_create_order(
-                symbol=symbol,
-                side=side,
-                type='MARKET',
-                quantity=quantity
-            )
-            
-            if order and order['orderId']:
+        
+            logger.info(f"⚡ تنفيذ صفقة {symbol}: {direction} | النوع: {signal_type} | الماكد: {macd_status.get('bullish', 'N/A')}")
+        
+            # ✅ تنفيذ الأمر مع معالجة الأخطاء
+            try:
+                order = self.client.futures_create_order(
+                    symbol=symbol,
+                    side=side,
+                    type='MARKET',
+                    quantity=quantity
+                )
+            except Exception as order_error:
+                logger.error(f"❌ فشل إنشاء أمر لـ {symbol}: {order_error}")
+                return False
+        
+            if order and order.get('orderId'):
                 # الحصول على سعر التنفيذ الفعلي
                 executed_price = current_price
                 try:
                     order_info = self.client.futures_get_order(symbol=symbol, orderId=order['orderId'])
                     if order_info.get('avgPrice'):
                         executed_price = float(order_info['avgPrice'])
-                except:
-                    pass
-                
+                except Exception as price_error:
+                    logger.warning(f"⚠️ لا يمكن الحصول على سعر التنفيذ لـ {symbol}: {price_error}")
+            
                 trade_data = {
                     'symbol': symbol,
                     'quantity': quantity,
                     'entry_price': executed_price,
                     'side': direction,
                     'leverage': TRADING_SETTINGS['max_leverage'],
-                    'signal_confidence': signal['confidence'],
+                    'signal_confidence': signal.get('confidence', 0.5),
                 }
-                
-                # 🆕 إضافة الصفقة للنظام المناسب مع الماكد
+            
+                # 🆕 تمرير المرجع إلى trade_manager
+                if not hasattr(self.trade_manager, 'bot_instance'):
+                    self.trade_manager.bot_instance = self
+            
+                # إضافة الصفقة للنظام المناسب مع الماكد
                 self.trade_manager.add_trade(symbol, trade_data, signal_type, macd_status)
-                
+            
                 # 🆕 تحديث الترند للإشارات الإضافية مع الماكد
                 if signal_type != 'BASE_CROSSOVER':
                     self.trend_manager.add_trade_to_trend(symbol, signal_type, macd_status)
-                
+            
                 self.performance_stats['trades_opened'] += 1
                 self.performance_stats['daily_trades_count'] += 1
-                
+            
                 # إرسال إشعار
                 if self.notifier:
                     trend_status = self.trend_manager.get_trend_status(symbol)
-                    self.notifier.send_signal_alert(symbol, signal, current_price, trend_status)
-                
+                    notification_sent = self.notifier.send_signal_alert(symbol, signal, current_price, trend_status)
+                    if not notification_sent:
+                        logger.warning(f"⚠️ فشل إرسال إشعار لـ {symbol}")
+            
                 logger.info(f"✅ تم فتح صفقة {direction} لـ {symbol} - النوع: {signal_type}")
                 return True
-            
+        
             return False
-            
+        
+        except KeyError as e:
+            logger.error(f"❌ مفتاح مفقود في تنفيذ الصفقة: {e}")
+            return False
         except Exception as e:
-            logger.error(f"❌ فشل تنفيذ صفقة {symbol}: {e}")
+            logger.error(f"❌ فشل تنفيذ صفقة {signal.get('symbol', 'UNKNOWN')}: {e}")
             return False
 
     def scan_market(self):
