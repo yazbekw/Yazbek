@@ -312,6 +312,10 @@ class AdvancedMACDSignalGenerator:
             base_signal = self._analyze_base_signal(indicators, symbol, current_price, macd_status, data)
             if base_signal:
                 signals.append(base_signal)
+
+            base_signal = self._analyze_base_signal(indicators, symbol, current_price, macd_status, data)
+            if base_signal:
+                signals.append(base_signal)
             
             # الإشارات الإضافية في الترند النشط
             additional_signals = self._analyze_additional_signals(indicators, symbol, current_price, data, macd_status)
@@ -379,6 +383,200 @@ class AdvancedMACDSignalGenerator:
             'macd_histogram_prev': prev['macd_histogram'],
             'macd_histogram_prev_2': prev_2['macd_histogram'],
         }
+
+    def predict_crossover(self, symbol, data, current_price):
+        """التنبؤ بالتقاطعات قبل حدوثها بتحليل آخر 3 شمعات"""
+        try:
+            if len(data) < 10:  # تحتاج بيانات كافية
+                return None
+        
+            indicators = self._calculate_advanced_indicators(data)
+        
+            # تحليل اتجاه وقوة المتوسطات
+            crossover_prediction = self._analyze_crossover_momentum(indicators, data)
+        
+            if crossover_prediction and crossover_prediction['probability'] >= 0.7:
+                return crossover_prediction
+            
+            return None
+        
+        except Exception as e:
+            logger.error(f"❌ خطأ في التنبؤ بالتقاطع لـ {symbol}: {e}")
+            return None
+
+    def _analyze_crossover_momentum(self, indicators, data):
+        """تحليل زخم التقاطع من آخر 3 شمعات"""
+    
+        # المسافة الحالية بين المتوسطات
+        current_distance = indicators['ema9'] - indicators['ema21']
+        abs_distance = abs(current_distance)
+    
+        # تحليل آخر 3 شمعات لتحديد الاتجاه
+        df_last_3 = data.tail(3)
+    
+        # حساب سرعة تقارب/تباعد المتوسطات
+        ema9_trend = self._calculate_ema_trend(df_last_3, 'ema9')
+        ema21_trend = self._calculate_ema_trend(df_last_3, 'ema21')
+    
+        # اتجاه التقارب
+        convergence_direction = ema9_trend['direction'] - ema21_trend['direction']
+    
+        # حساب احتمالية التقاطع
+        crossover_probability = self._calculate_crossover_probability(
+            current_distance, abs_distance, ema9_trend, ema21_trend, convergence_direction
+        )
+    
+        if crossover_probability['high_probability']:
+            return {
+                'symbol': data.iloc[-1]['symbol'] if 'symbol' in data.columns else 'UNKNOWN',
+                'type': crossover_probability['type'],
+                'direction': crossover_probability['direction'],
+                'probability': crossover_probability['probability'],
+                'expected_time': crossover_probability['expected_time'],
+                'current_distance_pct': crossover_probability['current_distance_pct'],
+                'momentum_strength': crossover_probability['momentum_strength'],
+                'indicators': indicators,
+                'timestamp': datetime.now(damascus_tz),
+                'current_price': indicators['current_close'],
+                'signal_type': 'CROSSOVER_PREDICTION',
+                'priority': 90  # أولوية عالية ولكن أقل من التقاطع الفعلي
+            }
+    
+        return None
+
+    def _calculate_ema_trend(self, data, ema_column):
+        """حساب اتجاه وقوة المتوسط المتحرك"""
+        if len(data) < 3:
+            return {'direction': 0, 'strength': 0, 'angle': 0}
+    
+        # حساب المتوسط إذا لم يكن موجوداً
+        if ema_column not in data.columns:
+            if ema_column == 'ema9':
+                data['ema9'] = data['close'].ewm(span=9, adjust=False).mean()
+            else:
+                data['ema21'] = data['close'].ewm(span=21, adjust=False).mean()
+    
+        values = data[ema_column].tail(3).values
+    
+        if len(values) < 3:
+            return {'direction': 0, 'strength': 0, 'angle': 0}
+    
+        # اتجاه الحركة (آخر قيمة - أول قيمة)
+        direction = 1 if values[-1] > values[0] else -1 if values[-1] < values[0] else 0
+    
+        # قوة الحركة (النسبة المئوية للتغير)
+        strength = abs((values[-1] - values[0]) / values[0] * 100) if values[0] != 0 else 0
+    
+        # زاوية الحركة (الميل)
+        angle = self._calculate_angle(values)
+    
+        return {
+            'direction': direction,
+            'strength': strength,
+            'angle': angle,
+            'acceleration': (values[-1] - values[-2]) - (values[-2] - values[-3]) if len(values) >= 3 else 0
+        }
+
+    def _calculate_angle(self, values):
+        """حساب زاوية حركة المتوسط"""
+        if len(values) < 2:
+            return 0
+    
+        x = np.array(range(len(values)))
+        y = np.array(values)
+    
+        try:
+            # حساب الميل باستخدام الانحدار الخطي
+            slope, _ = np.polyfit(x, y, 1)
+            angle = np.degrees(np.arctan(slope / (max(y) - min(y) + 1e-10)))
+            return angle
+        except:
+            return 0
+
+    def _calculate_crossover_probability(self, current_distance, abs_distance, ema9_trend, ema21_trend, convergence_direction):
+        """حساب احتمالية التقاطع"""
+    
+        # المسافة النسبية بين المتوسطات
+        avg_price = (ema9_trend.get('current_value', 0) + ema21_trend.get('current_value', 0)) / 2
+        distance_pct = (abs_distance / avg_price * 100) if avg_price != 0 else 100
+    
+        # تحديد نوع التقاطع المتوقع
+        expected_type = "BULLISH" if current_distance < 0 and convergence_direction > 0 else "BEARISH" if current_distance > 0 and convergence_direction < 0 else "NONE"
+    
+        # حساب قوة الزخم
+        momentum_strength = self._calculate_momentum_strength(ema9_trend, ema21_trend, convergence_direction)
+    
+        # حساب الاحتمالية
+        probability = self._calculate_probability_score(distance_pct, momentum_strength, ema9_trend, ema21_trend)
+    
+        # الوقت المتوقع للتقاطع
+        expected_time = self._estimate_crossover_time(distance_pct, momentum_strength)
+    
+        return {
+            'type': expected_type,
+            'direction': 'LONG' if expected_type == 'BULLISH' else 'SHORT',
+            'probability': probability,
+            'current_distance_pct': distance_pct,
+            'momentum_strength': momentum_strength,
+            'expected_time': expected_time,
+            'high_probability': probability >= 0.7 and momentum_strength >= 0.6
+        }
+
+    def _calculate_momentum_strength(self, ema9_trend, ema21_trend, convergence_direction):
+        """حساب قوة زخم التقارب"""
+        strength_score = 0
+    
+        # قوة حركة EMA9
+        if ema9_trend['strength'] > 0.1:  # تغير أكثر من 0.1%
+            strength_score += 0.3
+    
+        # قوة حركة EMA21  
+        if ema21_trend['strength'] > 0.05:  # تغير أكثر من 0.05%
+            strength_score += 0.2
+    
+        # اتجاه التقارب
+        if abs(convergence_direction) > 0.5:
+            strength_score += 0.3
+    
+        # التسارع في الحركة
+        if abs(ema9_trend.get('acceleration', 0)) > 0.01:
+            strength_score += 0.2
+    
+        return min(strength_score, 1.0)  # تأكد من عدم تجاوز 1.0
+
+    def _calculate_probability_score(self, distance_pct, momentum_strength, ema9_trend, ema21_trend):
+        """حساب درجة الاحتمالية"""
+        probability = 0
+    
+        # المسافة بين المتوسطات (كلما كانت أقل زادت الاحتمالية)
+        if distance_pct < 0.05:  # أقل من 0.05%
+            probability += 0.4
+        elif distance_pct < 0.1:  # أقل من 0.1%
+            probability += 0.3
+        elif distance_pct < 0.2:  # أقل من 0.2%
+            probability += 0.2
+    
+        # قوة الزخم
+        probability += momentum_strength * 0.4
+    
+        # زاوية الحركة
+        if abs(ema9_trend.get('angle', 0)) > 5:  # زاوية كبيرة
+            probability += 0.1
+        if abs(ema21_trend.get('angle', 0)) > 3:  # زاوية متوسطة
+            probability += 0.1
+    
+        return min(probability, 1.0)
+
+    def _estimate_crossover_time(self, distance_pct, momentum_strength):
+        """تقدير الوقت المتوقع للتقاطع"""
+        if momentum_strength > 0.8:
+            return "1-2 شمعة"
+        elif momentum_strength > 0.6:
+            return "2-3 شمعات" 
+        elif momentum_strength > 0.4:
+            return "3-4 شمعات"
+        else:
+            return "4+ شمعات"
     
     def _calculate_rsi(self, prices, period):
         """حساب RSI بشكل صحيح وآمن"""
@@ -700,10 +898,83 @@ class TelegramNotifier:
         except Exception as e:
             logger.error(f"❌ خطأ في إرسال رسالة تلغرام: {e}")
             return False
+
+    def send_prediction_alert(self, symbol, prediction, current_price):
+        """إرسال إشعار تنبؤ بالتقاطع"""
+        try:
+            direction_emoji = "🟢" if prediction['direction'] == 'LONG' else "🔴"
+            probability_color = "🟢" if prediction['probability'] >= 0.8 else "🟡" if prediction['probability'] >= 0.7 else "🟠"
+        
+            message = (
+                f"🔮 <b>تنبؤ بالتقاطع القريب</b> {direction_emoji}\n"
+                f"العملة: {symbol}\n"
+                f"الاتجاه المتوقع: {prediction['direction']}\n"
+                f"📊 <b>الاحتمالية:</b> {probability_color} {prediction['probability']:.1%}\n"
+                f"⏱️ <b>الوقت المتوقع:</b> {prediction['expected_time']}\n"
+                f"📏 <b>المسافة الحالية:</b> {prediction['current_distance_pct']:.3f}%\n"
+                f"💪 <b>قوة الزخم:</b> {prediction['momentum_strength']:.1%}\n"
+                f"💰 <b>السعر الحالي:</b> ${current_price:.4f}\n"
+                f"📈 <b>المؤشرات:</b>\n"
+                f"• EMA 9: {prediction['indicators']['ema9']:.4f}\n"
+                f"• EMA 21: {prediction['indicators']['ema21']:.4f}\n"
+                f"• المسافة: {prediction['indicators']['ema9'] - prediction['indicators']['ema21']:.4f}\n"
+                f"🕒 <b>الوقت:</b> {datetime.now(damascus_tz).strftime('%H:%M:%S')}\n"
+                f"⚠️ <i>هذا تنبؤ وليس إشارة تداول</i>"
+            )
+        
+            return self.send_message(message)
+        
+        except Exception as e:
+            logger.error(f"❌ خطأ في إرسال إشعار التنبؤ: {e}")
+            return False
+
+    def send_enhanced_prediction_alerts(self, symbol, prediction, action):
+        """إشعارات متقدمة للتنبؤ بالتقاطع"""
+        try:
+            if action == "ALERT":
+                message = (
+                    f"🚨 <b>تنبؤ عالي الاحتمالية</b>\n"
+                    f"العملة: {symbol}\n"
+                    f"الاتجاه: {prediction['direction']}\n"
+                    f"🎯 الاحتمالية: {prediction['probability']:.1%}\n"
+                    f"⏰ متوقع خلال: {prediction['expected_time']}\n"
+                    f"💪 قوة الزخم: {prediction['momentum_strength']:.1%}\n"
+                    f"📏 المسافة: {prediction['current_distance_pct']:.3f}%\n"
+                    f"🔄 تم تفعيل المراقبة المكثفة\n"
+                    f"🕒 {datetime.now(damascus_tz).strftime('%H:%M:%S')}"
+                )
+        
+            elif action == "EXECUTION":
+                message = (
+                    f"✅ <b>تنفيذ ناجح للتقاطع المتوقع</b>\n"
+                    f"العملة: {symbol}\n"
+                    f"الاتجاه: {prediction['direction']}\n"
+                    f"🎯 دقة التنبؤ: {prediction['probability']:.1%}\n"
+                    f"⚡ تم التنفيذ خلال: {prediction['expected_time']}\n"
+                    f"📊 الصفقة: PREDICTED_CROSSOVER\n"
+                    f"🕒 {datetime.now(damascus_tz).strftime('%H:%M:%S')}"
+                )
+        
+            elif action == "CANCELLED":
+                message = (
+                    f"❌ <b>إلغاء التنبؤ</b>\n"
+                    f"العملة: {symbol}\n"
+                    f"السبب: شروط التقاطع لم تتوفر\n"
+                    f"🕒 {datetime.now(damascus_tz).strftime('%H:%M:%S')}"
+                )
+        
+            return self.send_message(message)
+        
+        except Exception as e:
+            logger.error(f"❌ خطأ في إرسال إشعار التنبؤ المتقدم: {e}")
+            return False
     
     def send_signal_alert(self, symbol, signal, current_price, trend_status=None):
         """إرسال إشعار إشارة مع بيانات الماكد - معدل"""
         try:
+            if signal.get('signal_type') == 'CROSSOVER_PREDICTION':
+                return self.send_prediction_alert(symbol, signal, current_price)
+           
             if current_price is None:
                 logger.error(f"❌ لا يمكن إرسال إشعار لـ {symbol} لأن السعر غير متوفر")
                 return False
@@ -1332,6 +1603,15 @@ class AdvancedMACDTrendBot:
         # بدء الخدمات
         self.start_services()
         self.send_startup_message()
+        self.alert_status = {}
+
+        self.performance_stats.update({
+            'predicted_trades': 0,
+            'successful_predictions': 0,
+            'failed_predictions': 0,
+            'macd_early_exits': 0,
+            'macd_filtered_signals': 0,
+        })
         
         AdvancedMACDTrendBot._instance = self
         logger.info("✅ تم تهيئة بوت الماكد المتقدم بنجاح")
@@ -1345,6 +1625,224 @@ class AdvancedMACDTrendBot:
         except Exception as e:
             logger.error(f"❌ فشل الاتصال بـ Binance API: {e}")
             raise
+
+    def prepare_for_impending_crossover(self, symbol, prediction):
+        """التحضير الاستباقي للتقاطع المتوقع"""
+    
+        # 1. إغلاق أي صفقات معاكسة فوراً
+        if prediction['direction'] == 'LONG':
+            self.trade_manager.check_and_handle_opposite_signals(symbol, 'LONG')
+        else:
+            self.trade_manager.check_and_handle_opposite_signals(symbol, 'SHORT')
+    
+        # 2. تعيين الرافعة المالية مسبقاً
+        self.set_leverage(symbol, TRADING_SETTINGS['max_leverage'])
+    
+        # 3. حساب حجم المركز مسبقاً
+        current_price = self.get_current_price(symbol)
+        pre_calculated_quantity = self.calculate_position_size(symbol, current_price)
+    
+        # 4. تسجيل حالة التأهب في النظام
+        self.alert_status[symbol] = {
+            'prediction': prediction,
+            'pre_calculated_quantity': pre_calculated_quantity,
+            'alert_time': datetime.now(damascus_tz),
+            'status': 'AWAITING_CROSSOVER'
+        }
+    
+        logger.info(f"🟡 حالة تأهب لـ {symbol}: تقاطع {prediction['direction']} متوقع خلال {prediction['expected_time']}")
+
+    def intensive_monitoring_mode(self, symbol, prediction):
+        """تفعيل وضع المراقبة المكثفة للعملة"""
+    
+        # زيادة وتيرة المسح لهذه العملة
+        monitoring_interval = 15  # ثانية بدلاً من دقيقة
+    
+        def intensive_scan():
+            scan_count = 0
+            while (scan_count < 10 and 
+                   symbol in self.alert_status and 
+                   self.alert_status[symbol]['status'] == 'AWAITING_CROSSOVER'):
+            
+                # مسح مكثف كل 15 ثانية
+                data = self.get_historical_data(symbol, TRADING_SETTINGS['data_interval'], 10)
+                current_price = self.get_current_price(symbol)
+            
+                if data is not None and current_price:
+                    # التحقق من حدوث التقاطع فعلياً
+                    crossover_occurred = self._check_crossover_occurrence(data, prediction)
+                
+                    if crossover_occurred:
+                        self._execute_immediate_trade(symbol, prediction, data, current_price)
+                        break
+            
+                scan_count += 1
+                time.sleep(monitoring_interval)
+    
+        # تشغيل المراقبة المكثفة في thread منفصل
+        threading.Thread(target=intensive_scan, daemon=True).start()
+
+    def _execute_immediate_trade(self, symbol, prediction, data, current_price):
+        """تنفيذ فوري عند تأكيد التقاطع"""
+    
+        try:
+            # 1. إعادة حساب المؤشرات للتأكيد النهائي
+            indicators = self.signal_generator._calculate_advanced_indicators(data)
+            macd_status = self.signal_generator._analyze_macd_status(indicators, data)
+        
+            # 2. التحقق من شروط الصفقة المحسنة
+            if not self._validate_enhanced_conditions(indicators, macd_status, prediction):
+                logger.warning(f"⏹️ شروط التقاطع لم تتوفر لـ {symbol}")
+                self.alert_status[symbol]['status'] = 'CANCELLED'
+            
+                # إرسال إشعار الإلغاء
+                if self.notifier:
+                    self.notifier.send_enhanced_prediction_alerts(symbol, prediction, "CANCELLED")
+                return False
+        
+            # 3. إنشاء إشارة تداول فورية
+            immediate_signal = {
+                'symbol': symbol,
+                'direction': prediction['direction'],
+                'confidence': min(prediction['probability'] + 0.1, 0.99),  # زيادة الثقة
+                'reason': f'تقاطع مؤكد بعد تنبؤ - {prediction["expected_time"]}',
+                'indicators': indicators,
+                'timestamp': datetime.now(damascus_tz),
+                'current_price': current_price,
+                'signal_type': 'PREDICTED_CROSSOVER',
+                'priority': 95,  # أولوية عالية جداً
+                'macd_status': macd_status,
+                'prediction_accuracy': prediction['probability']
+            }
+        
+            # 4. تنفيذ الصفقة فوراً
+            trade_executed = self.execute_trade(immediate_signal)
+        
+            if trade_executed:
+                # 5. تحديث حالة النظام
+                self.alert_status[symbol]['status'] = 'EXECUTED'
+                self.alert_status[symbol]['execution_time'] = datetime.now(damascus_tz)
+            
+                # 6. إحصائية النجاح
+                self.performance_stats['predicted_trades'] = self.performance_stats.get('predicted_trades', 0) + 1
+                self.performance_stats['successful_predictions'] = self.performance_stats.get('successful_predictions', 0) + 1
+            
+                # 7. إرسال إشعار النجاح
+                if self.notifier:
+                    self.notifier.send_enhanced_prediction_alerts(symbol, prediction, "EXECUTION")
+            
+                logger.info(f"✅ تنفيذ ناجح للتقاطع المتوقع لـ {symbol}")
+                return True
+            else:
+                self.alert_status[symbol]['status'] = 'FAILED'
+                return False
+            
+        except Exception as e:
+            logger.error(f"❌ فشل التنفيذ الفوري لـ {symbol}: {e}")
+            self.alert_status[symbol]['status'] = 'ERROR'
+            return False
+
+    def _validate_enhanced_conditions(self, indicators, macd_status, prediction):
+        """تحقق محسن من شروط التقاطع"""
+    
+        # شروط إضافية للتقاطع المؤكد
+        conditions = []
+    
+        if prediction['direction'] == 'LONG':
+            conditions.append(indicators['ema9'] > indicators['ema21'])  # التقاطع حدث
+            conditions.append(indicators['rsi'] > 45)  # RSI معقول
+            conditions.append(macd_status['bullish'])  # MACD يؤكد
+            conditions.append(indicators['volume'] > indicators['volume_avg'] * 1.1)  # حجم جيد
+        else:
+            conditions.append(indicators['ema9'] < indicators['ema21'])  # التقاطع حدث
+            conditions.append(indicators['rsi'] < 55)  # RSI معقول
+            conditions.append(macd_status['bearish'])  # MACD يؤكد
+            conditions.append(indicators['volume'] > indicators['volume_avg'] * 1.1)  # حجم جيد
+    
+        return all(conditions)
+
+    def _handle_crossover_prediction(self, prediction_signal):
+        """معالجة إشارات التنبؤ بالتقاطع"""
+        try:
+            symbol = prediction_signal['symbol']
+        
+            # إذا كانت الاحتمالية عالية جداً
+            if prediction_signal['probability'] >= 0.85:
+                # تفعيل النظام الاستباقي
+                self.prepare_for_impending_crossover(symbol, prediction_signal)
+                self.intensive_monitoring_mode(symbol, prediction_signal)
+            
+                # إرسال إشعار التأهب
+                if self.notifier:
+                    self.notifier.send_enhanced_prediction_alerts(
+                        symbol, prediction_signal, "ALERT"
+                    )
+            
+                logger.info(f"🚨 تفعيل النظام الاستباقي لـ {symbol} - احتمالية: {prediction_signal['probability']:.1%}")
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في معالجة تنبؤ التقاطع: {e}")
+
+    def _check_crossover_occurrence(self, data, prediction):
+        """التحقق من حدوث التقاطع فعلياً"""
+        try:
+            indicators = self.signal_generator._calculate_advanced_indicators(data)
+        
+            if prediction['direction'] == 'LONG':
+                # تحقق من التقاطع الصاعد
+                crossover_occurred = (indicators['ema9'] > indicators['ema21'] and 
+                                    indicators['ema9_prev'] <= indicators['ema21_prev'])
+            else:
+                # تحقق من التقاطع الهابط
+                crossover_occurred = (indicators['ema9'] < indicators['ema21'] and 
+                                    indicators['ema9_prev'] >= indicators['ema21_prev'])
+        
+            return crossover_occurred
+        
+        except Exception as e:
+            logger.error(f"❌ خطأ في التحقق من حدوث التقاطع: {e}")
+            return False
+
+    def cleanup_prediction_alerts(self):
+        """تنظيف تنبيهات التنبؤ القديمة"""
+        try:
+            current_time = datetime.now(damascus_tz)
+            alerts_to_remove = []
+        
+            for symbol, alert in self.alert_status.items():
+                alert_age = (current_time - alert['alert_time']).total_seconds() / 60
+            
+                # إزالة التنبيهات الأقدم من 30 دقيقة
+                if alert_age > 30:
+                    alerts_to_remove.append(symbol)
+            
+                # إلغاء التنبيهات التي لم تنفذ خلال الوقت المتوقع
+                elif (alert['status'] == 'AWAITING_CROSSOVER' and 
+                      alert_age > 10):  # أكثر من 10 دقائق بدون تنفيذ
+                    alerts_to_remove.append(symbol)
+                    self.performance_stats['failed_predictions'] = self.performance_stats.get('failed_predictions', 0) + 1
+                
+                    if self.notifier:
+                        self.notifier.send_enhanced_prediction_alerts(
+                            symbol, alert['prediction'], "CANCELLED"
+                        )
+        
+            for symbol in alerts_to_remove:
+                del self.alert_status[symbol]
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في تنظيف تنبيهات التنبؤ: {e}")
+
+    def get_prediction_status(self):
+        """الحصول على حالة التنبؤات الحالية"""
+        return {
+            'active_predictions': self.alert_status,
+            'prediction_stats': {
+                'total_predicted': self.performance_stats.get('predicted_trades', 0),
+                'successful': self.performance_stats.get('successful_predictions', 0),
+                'failed': self.performance_stats.get('failed_predictions', 0)
+            }
+        }
 
     def get_real_time_balance(self):
         """جلب الرصيد الحالي"""
@@ -1714,6 +2212,25 @@ class AdvancedMACDTrendBot:
                     if signal['signal_type'] == 'BASE_CROSSOVER':
                         break  # نكتفي بصققة واحدة أساسية في الدورة
             
+    
+
+            for signal in opportunities:
+                if signal.get('signal_type') == 'CROSSOVER_PREDICTION':
+                    self._handle_crossover_prediction(signal)
+        
+            executed_trades = 0
+            for signal in opportunities:
+                if self.trade_manager.get_active_trades_count() >= TRADING_SETTINGS['max_active_trades']:
+                    break
+
+            if self.execute_trade(signal):
+                    executed_trades += 1
+                    if signal['signal_type'] == 'BASE_CROSSOVER':
+                        break
+        
+            # إضافة تنظيف التنبيهات القديمة
+            self.cleanup_prediction_alerts()
+        
             wait_time = TRADING_SETTINGS['rescan_interval_minutes'] * 60
             logger.info(f"⏳ انتظار {wait_time} ثانية للدورة القادمة...")
             time.sleep(wait_time)
