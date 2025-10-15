@@ -715,18 +715,17 @@ class AdvancedMACDSignalGenerator:
         return None
 
 class AdvancedMACDTradeManager:
-    """🆕 مدير صفقات متطور مع دعم الماكد"""
-    
-    def __init__(self, client, notifier, trend_manager):
+    def __init__(self, client, notifier, trend_manager, bot_instance=None):
         self.client = client
         self.notifier = notifier
         self.precision_manager = PrecisionManager(client)
         self.trend_manager = trend_manager
+        self.bot_instance = bot_instance  # ✅ حفظ المرجع
         self.active_trades = {}
         self.monitoring_active = True
-        self.last_monitor_check = datetime.now(damascus_tz)  # 🆕 إضافة هذا المتغير
+        self.last_monitor_check = datetime.now(damascus_tz)
         self.start_trade_monitoring()
-    
+        
     def _get_current_price(self, symbol):
         """الحصول على السعر الحالي"""
         try:
@@ -1245,6 +1244,18 @@ class AdvancedMACDTrendBot:
     def __init__(self):
         if AdvancedMACDTrendBot._instance is not None:
             raise Exception("هذه الفئة تستخدم نمط Singleton")
+
+        self.signal_generator = AdvancedMACDSignalGenerator()
+        self.notifier = TelegramNotifier(self.telegram_token, self.telegram_chat_id)
+        self.trend_manager = self.signal_generator.trend_manager
+        
+        # ✅ تمرير المرجع self إلى trade_manager
+        self.trade_manager = AdvancedMACDTradeManager(
+            self.client, 
+            self.notifier, 
+            self.trend_manager,
+            self  # 🆕 تمرير المرجع
+        )
         
         self.api_key = os.environ.get('BINANCE_API_KEY')
         self.api_secret = os.environ.get('BINANCE_API_SECRET')
