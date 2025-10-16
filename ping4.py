@@ -13,6 +13,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 URLS = [
     "https://mybot-1-61u6.onrender.com",
     "https://yazbek-1j7v.onrender.com",
+    "https://crypto-scalping.onrender.com",
     "https://mon-1.onrender.com"
 ]
 
