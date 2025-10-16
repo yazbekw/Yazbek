@@ -2160,67 +2160,89 @@ class AdvancedMACDTrendBot:
             logger.warning(f"⚠️ خطأ في تعيين الرافعة: {e}")
             return False
 
+    
+    
     def execute_trade(self, signal):
-        """تنفيذ الصفقة في نظام الماكد المتقدم - محسّن وآمن"""
+        """تنفيذ الصفقة في نظام الماكد المتقدم - محسّن مع الحفاظ على الهيكل الكامل"""
         try:
-            # فحص شامل للبيانات المطلوبة
-            required_keys = ['symbol', 'direction', 'signal_type', 'macd_status']
-            for key in required_keys:
-                if key not in signal:
-                    logger.error(f"❌ إشارة ناقصة البيانات: المفتاح {key} مفقود")
-                    return False
+            # ========== تحسين 1: فحص شامل للبيانات المطلوبة ==========
+            required_keys = ['symbol', 'direction', 'signal_type', 'macd_status', 'current_price']
+            missing_keys = [key for key in required_keys if key not in signal]
+            if missing_keys:
+                logger.error(f"❌ إشارة ناقصة البيانات: المفاتيح المفقودة {missing_keys}")
+                return False
+        
+            # تحقق إضافي من القيم
+            if not signal['symbol'] or signal['current_price'] <= 0:
+                logger.error(f"❌ بيانات غير صالحة في الإشارة: symbol={signal['symbol']}, price={signal['current_price']}")
+                return False
         
             symbol = signal['symbol']
             direction = signal['direction']
             signal_type = signal['signal_type']
             macd_status = signal['macd_status']
+            current_price = signal['current_price']
         
-            # فحص إضافي لقيم البيانات
             if direction not in ['LONG', 'SHORT']:
                 logger.error(f"❌ اتجاه غير صالح: {direction}")
                 return False
         
+            # ========== تحسين 2: فحص السعر والكمية بشكل منفصل ==========
             # فحص السعر الحالي أولاً
-            current_price = self.get_current_price(symbol)
             if not current_price or current_price <= 0:
                 logger.error(f"❌ سعر غير صالح لـ {symbol}: {current_price}")
                 return False
-            
+        
             # فحص الكمية ثانياً
             quantity = self.calculate_position_size(symbol, current_price)
             if not quantity or quantity <= 0:
-               logger.error(f"❌ كمية غير صالحة لـ {symbol}: {quantity}")
-               return False
+                logger.error(f"❌ كمية غير صالحة لـ {symbol}: {quantity}")
+                return False
         
-            # معالجة خاصة للإشارة الأساسية
+            # ========== تحسين 3: تسجيل مفصل قبل المعالجة ==========
+            logger.info(f"🔍 معالجة إشارة {symbol}: {direction} | النوع: {signal_type} | السعر: {current_price:.4f}")
+        
+            # ========== تحسين 4: معالجة خاصة للإشارة الأساسية مع تحسين التسجيل ==========
             if signal_type == 'BASE_CROSSOVER':
+                logger.info(f"🔄 معالجة إشارة أساسية لـ {symbol} - التحقق من الصفقات المعاكسة")
+            
                 # التحقق من وجود صفقة معاكسة وإغلاقها
                 trade_closed = self.trade_manager.check_and_handle_opposite_signals(symbol, direction)
-        
+    
                 if trade_closed:
-                    logger.info(f"⏳ انتظار قليل بعد إغلاق الصفقة المعاكسة لـ {symbol}")
-                    time.sleep(15)
+                    logger.info(f"⏳ انتظار 15 ثانية بعد إغلاق الصفقة المعاكسة لـ {symbol}")
+                    time.sleep(15)  # زيادة وقت الانتظار لضمان استقرار السوق
         
                 # بدء ترند جديد مع حالة الماكد
-                self.trend_manager.start_new_trend(symbol, direction, signal_type, macd_status)
+                trend_id = self.trend_manager.start_new_trend(symbol, direction, signal_type, macd_status)
                 self.performance_stats['total_trends'] += 1
-    
-            # التحقق من إمكانية فتح الصفقة مع الماكد
+                logger.info(f"🎯 بدء ترند جديد لـ {symbol}: {trend_id}")
+
+            # ========== تحسين 5: التحقق من إمكانية فتح الصفقة مع تسجيل الأسباب ==========
             can_trade, reasons = self.can_open_trade(symbol, direction, signal_type, macd_status)
             if not can_trade:
-                logger.info(f"⏭️ تخطي {symbol} {direction} ({signal_type}): {', '.join(reasons)}")
+                reason_text = ', '.join(reasons)
+                logger.info(f"⏭️ تخطي {symbol} {direction} ({signal_type}): {reason_text}")
+            
+                # تسجيل الإشارات المفلترة للإحصائيات
+                if "الفاصل الزمني غير كافي" in reason_text:
+                    self.performance_stats['filtered_time_gap'] = self.performance_stats.get('filtered_time_gap', 0) + 1
+                if "الحد الأقصى للصفقات النشطة" in reason_text:
+                    self.performance_stats['filtered_max_trades'] = self.performance_stats.get('filtered_max_trades', 0) + 1
+                
                 return False
-    
-            # تعيين الرافعة
+
+            # ========== تحسين 6: تعيين الرافعة مع معالجة أفضل للأخطاء ==========
             leverage_success = self.set_leverage(symbol, TRADING_SETTINGS['max_leverage'])
             if not leverage_success:
                 logger.warning(f"⚠️ فشل تعيين الرافعة لـ {symbol}, المتابعة بأي حال")
-    
+                # لا نعود هنا لأن الرافعة قد تكون مضبوطة مسبقاً
+
             side = 'BUY' if direction == 'LONG' else 'SELL'
-    
-            logger.info(f"⚡ تنفيذ صفقة {symbol}: {direction} | النوع: {signal_type} | الماكد: {macd_status.get('bullish', 'N/A')}")
-    
-            # تنفيذ الأمر مع معالجة الأخطاء
+
+            logger.info(f"⚡ محاولة تنفيذ صفقة {symbol}: {direction} | النوع: {signal_type} | الكمية: {quantity:.6f}")
+
+            # ========== تحسين 7: تنفيذ الأمر مع معالجة محسنة للأخطاء ==========
             try:
                 order = self.client.futures_create_order(
                     symbol=symbol,
@@ -2230,21 +2252,36 @@ class AdvancedMACDTrendBot:
                 )
             except Exception as order_error:
                 logger.error(f"❌ فشل إنشاء أمر لـ {symbol}: {order_error}")
-                return False
-    
-            if order and order.get('orderId'):
-                # الحصول على سعر التنفيذ الفعلي
-                executed_price = current_price
-                self.last_trade_times[symbol] = datetime.now(damascus_tz)
             
-                self.performance_stats['trades_opened'] += 1
+                # محاولة بديلة: إعادة المحاولة مرة واحدة بعد ثانية
+                try:
+                    logger.info(f"🔄 إعادة محاولة تنفيذ الأمر لـ {symbol} بعد فشل أولي")
+                    time.sleep(1)
+                    order = self.client.futures_create_order(
+                        symbol=symbol,
+                        side=side,
+                        type='MARKET',
+                        quantity=quantity
+                    )
+                except Exception as retry_error:
+                    logger.error(f"❌ فشل إعادة المحاولة لـ {symbol}: {retry_error}")
+                    return False
+
+            if order and order.get('orderId'):
+                # ========== تحسين 8: الحصول على سعر التنفيذ الفعلي مع معالجة أخطاء ==========
+                executed_price = current_price
                 try:
                     order_info = self.client.futures_get_order(symbol=symbol, orderId=order['orderId'])
-                    if order_info.get('avgPrice'):
+                    if order_info and order_info.get('avgPrice'):
                         executed_price = float(order_info['avgPrice'])
+                        logger.info(f"💰 سعر التنفيذ الفعلي لـ {symbol}: {executed_price:.4f} (بدلاً من {current_price:.4f})")
                 except Exception as price_error:
-                    logger.warning(f"⚠️ لا يمكن الحصول على سعر التنفيذ لـ {symbol}: {price_error}")
+                    logger.warning(f"⚠️ لا يمكن الحصول على سعر التنفيذ لـ {symbol}: {price_error}, استخدام السعر المقدر: {executed_price:.4f}")
+    
+                # تحديث وقت آخر صفقة
+                self.last_trade_times[symbol] = datetime.now(damascus_tz)
         
+                # ========== تحسين 9: إعداد بيانات الصفقة مع معلومات إضافية ==========
                 trade_data = {
                     'symbol': symbol,
                     'quantity': quantity,
@@ -2252,29 +2289,46 @@ class AdvancedMACDTrendBot:
                     'side': direction,
                     'leverage': TRADING_SETTINGS['max_leverage'],
                     'signal_confidence': signal.get('confidence', 0.5),
+                    'order_id': order['orderId'],
+                    'signal_type': signal_type,
+                    'macd_status': macd_status
                 }
-        
+    
                 # إضافة الصفقة للنظام المناسب مع الماكد
                 self.trade_manager.add_trade(symbol, trade_data, signal_type, macd_status)
-        
+    
                 # تحديث الترند للإشارات الإضافية مع الماكد
                 if signal_type != 'BASE_CROSSOVER':
-                    self.trend_manager.add_trade_to_trend(symbol, signal_type, macd_status)
-        
+                    trend_added = self.trend_manager.add_trade_to_trend(symbol, signal_type, macd_status)
+                    if trend_added:
+                        logger.info(f"📈 تمت إضافة صفقة للترند الحالي لـ {symbol}")
+                    else:
+                        logger.warning(f"⚠️ فشل إضافة صفقة للترند لـ {symbol}")
+    
+                # ========== تحسين 10: تحديث الإحصائيات بشكل شامل ==========
                 self.performance_stats['trades_opened'] += 1
                 self.performance_stats['daily_trades_count'] += 1
-        
-                # إرسال إشعار
+            
+                # إحصائية نوع الإشارة
+                signal_type_stats = self.performance_stats.get('signal_types', {})
+                signal_type_stats[signal_type] = signal_type_stats.get(signal_type, 0) + 1
+                self.performance_stats['signal_types'] = signal_type_stats
+    
+                # ========== تحسين 11: إرسال إشعار مع التحقق من النجاح ==========
                 if self.notifier:
                     trend_status = self.trend_manager.get_trend_status(symbol)
-                    notification_sent = self.notifier.send_signal_alert(symbol, signal, current_price, trend_status)
+                    notification_sent = self.notifier.send_signal_alert(symbol, signal, executed_price, trend_status)
                     if not notification_sent:
                         logger.warning(f"⚠️ فشل إرسال إشعار لـ {symbol}")
-         
-                logger.info(f"✅ تم فتح صفقة {direction} لـ {symbol} - النوع: {signal_type}")
+                    else:
+                        logger.info(f"📨 تم إرسال إشعار فتح الصفقة لـ {symbol}")
+     
+                logger.info(f"✅ تم فتح صفقة {direction} لـ {symbol} - النوع: {signal_type} - السعر: {executed_price:.4f}")
                 return True
     
-            return False
+            else:
+                logger.error(f"❌ فشل تنفيذ الأمر لـ {symbol}: لا يوجد orderId في الاستجابة")
+                return False
     
         except KeyError as e:
             logger.error(f"❌ مفتاح مفقود في تنفيذ الصفقة: {e}")
