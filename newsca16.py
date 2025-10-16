@@ -1088,25 +1088,25 @@ class AdvancedMACDTradeManager:
                 return entry_price * 0.998, entry_price * 1.002
     
     def check_and_handle_opposite_signals(self, symbol, new_direction):
-        """التحقق من وجود صفقة معاكسة وإغلاقها - محسّن وآمن"""
+        """التحقق من وجود صفقة معاكسة وإغلاقها - مصحح"""
         try:
             if not self.is_symbol_trading(symbol):
                 return False
-            
-            current_trade = self.get_trade(symbol)
         
+            current_trade = self.get_trade(symbol)
+    
             # فحص إضافي للتأكد من وجود الصفقة
             if not current_trade or current_trade['status'] != 'open':
                 return False
-            
-            current_direction = current_trade['side']
         
+            current_direction = current_trade['side']
+    
             # إذا كانت الإشارة الجديدة معاكسة للصفقة الحالية
             if current_direction != new_direction:
                 current_price = self._get_current_price(symbol)
                 if not current_price:
                     logger.error(f"❌ فشل الحصول على سعر {symbol} بعد 3 محاولات")
-                    return False
+                    return True  # 🔴 التصحيح: منع فتح صفقة جديدة إذا لم نحصل على السعر
             
                 logger.info(f"🔄 إشارة معاكسة لـ {symbol}: {current_direction} -> {new_direction}")
             
@@ -1125,18 +1125,23 @@ class AdvancedMACDTradeManager:
                     # إنهاء الترند الحالي
                     self.trend_manager.end_trend(symbol, "إشارة معاكسة")
                 
-                    # انتظار قبل فتح الصفقة الجديدة
-                    time.sleep(3)
-                    return True
+                    # زيادة وقت الانتظار
+                    logger.info(f"⏳ انتظار 10 ثوانٍ بعد إغلاق الصفقة المعاكسة")
+                    time.sleep(10)
+                    return True  # 🔴 التصحيح: تم إغلاق صفقة معاكسة
                 else:
                     logger.error(f"❌ فشل إغلاق الصفقة المعاكسة لـ {symbol}")
-                    return False
-                
+                    return True  # 🔴 التصحيح: منع فتح صفقة جديدة حتى لو فشل الإغلاق
+    
             return False
-        
+    
         except Exception as e:
             logger.error(f"❌ خطأ في التحقق من الإشارات المعاكسة لـ {symbol}: {e}")
-            return False
+            return True  # 🔴 التصحيح: في حالة الخطأ، منع فتح صفقات جديدة
+        
+            except Exception as e:
+                logger.error(f"❌ خطأ في التحقق من الإشارات المعاكسة لـ {symbol}: {e}")
+                return False
 
     def enhanced_trade_monitoring(self):
         """مراقبة محسنة للصفقات مع معالجة الأخطاء - مصححة ومحسنة"""
@@ -1597,6 +1602,7 @@ class AdvancedMACDTrendBot:
             'macd_early_exits': 0,
             'macd_filtered_signals': 0,
         }
+        self.last_trade_times = {}
         
         # بدء الخدمات
         self.start_services()
@@ -1999,22 +2005,30 @@ class AdvancedMACDTrendBot:
             return None
 
     def can_open_trade(self, symbol, direction, signal_type, macd_status):
-        """التحقق من إمكانية فتح صفقة مع الماكد"""
+        """التحقق من إمكانية فتح صفقة مع تحسينات الأمان"""
         reasons = []
-        
+    
+        # الفحص الأساسي
         if self.trade_manager.get_active_trades_count() >= TRADING_SETTINGS['max_active_trades']:
             reasons.append("الحد الأقصى للصفقات النشطة")
-        
+    
         if self.performance_stats['daily_trades_count'] >= TRADING_SETTINGS['max_daily_trades']:
             reasons.append("الحد اليومي للصفقات")
-        
+    
+        # 🔴 التصحيح: تطبيق min_trade_gap_minutes على جميع الصفقات (كان يطبق فقط على الإضافية)
+        if symbol in self.last_trade_times:
+            time_since_last = (datetime.now(damascus_tz) - self.last_trade_times[symbol]).total_seconds() / 60
+            if time_since_last < TRADING_SETTINGS['min_trade_gap_minutes']:
+                remaining = TRADING_SETTINGS['min_trade_gap_minutes'] - time_since_last
+                reasons.append(f"الفاصل الزمني غير كافي ({time_since_last:.1f} دقيقة, متبقي {remaining:.1f} دقيقة)")
+    
         # التحقق من الترند للإشارات الإضافية مع الماكد
         if signal_type != 'BASE_CROSSOVER':
             can_add, trend_reason = self.trend_manager.can_add_trade_to_trend(symbol, signal_type, macd_status)
             if not can_add:
                 reasons.append(trend_reason)
                 self.performance_stats['macd_filtered_signals'] += 1
-        
+    
         return len(reasons) == 0, reasons
 
     def calculate_position_size(self, symbol, current_price):
@@ -2084,7 +2098,7 @@ class AdvancedMACDTrendBot:
         
                 if trade_closed:
                     logger.info(f"⏳ انتظار قليل بعد إغلاق الصفقة المعاكسة لـ {symbol}")
-                    time.sleep(2)
+                    time.sleep(15)
         
                 # بدء ترند جديد مع حالة الماكد
                 self.trend_manager.start_new_trend(symbol, direction, signal_type, macd_status)
@@ -2120,6 +2134,9 @@ class AdvancedMACDTrendBot:
             if order and order.get('orderId'):
                 # الحصول على سعر التنفيذ الفعلي
                 executed_price = current_price
+                self.last_trade_times[symbol] = datetime.now(damascus_tz)
+            
+                self.performance_stats['trades_opened'] += 1
                 try:
                     order_info = self.client.futures_get_order(symbol=symbol, orderId=order['orderId'])
                     if order_info.get('avgPrice'):
