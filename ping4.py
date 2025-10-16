@@ -12,9 +12,9 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 # كل الروابط هنا
 URLS = [
     "https://mybot-1-61u6.onrender.com",
-    "https://yazbek-1j7v.onrender.com",
+    "https://yazbek-2-482e.onrender.com",
     "https://crypto-scalping.onrender.com",
-    "https://mon-1.onrender.com"
+    "https://yazbek-1-ozjd.onrender.com"
 ]
 
 def send_pings():
