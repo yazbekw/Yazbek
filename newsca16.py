@@ -867,19 +867,44 @@ class AdvancedMACDSignalGenerator:
         
         return None
 
-class TelegramNotifier:
-    """مدير إشعارات التلغرام"""
+
+ class TelegramNotifier:
+    """مدير إشعارات التلغرام محسّن"""
     
     def __init__(self, token, chat_id):
         self.token = token
         self.chat_id = chat_id
         self.base_url = f"https://api.telegram.org/bot{token}"
+        self.last_message_time = {}
+        self.min_interval = 2  # الحد الأدنى بين الإشعارات (ثواني)
     
-    def send_message(self, message, message_type='info'):
+    def _can_send_message(self, chat_id):
+        """التحقق من إمكانية إرسال الرسالة بناءً على الوقت"""
+        current_time = time.time()
+        if chat_id in self.last_message_time:
+            time_since_last = current_time - self.last_message_time[chat_id]
+            if time_since_last < self.min_interval:
+                time.sleep(self.min_interval - time_since_last)
+        
+        self.last_message_time[chat_id] = current_time
+        return True
+    
+    def send_message(self, message, message_type='info', max_retries=3):
+        """إرسال رسالة مع معالجة محسنة للأخطاء"""
         try:
             if not self.token or not self.chat_id:
+                logger.warning("⚠️ مفاتيح Telegram غير موجودة")
                 return False
-                
+            
+            # التحقق من الوقت بين الرسائل
+            if not self._can_send_message(self.chat_id):
+                return False
+            
+            if not message or len(message.strip()) == 0:
+                logger.warning("⚠️ محاولة إرسال رسالة فارغة")
+                return False
+            
+            # تقليم الرسالة إذا كانت طويلة جداً
             if len(message) > 4096:
                 message = message[:4090] + "..."
             
@@ -890,92 +915,62 @@ class TelegramNotifier:
                 'disable_web_page_preview': True
             }
             
-            response = requests.post(f"{self.base_url}/sendMessage", json=payload, timeout=10)
-            return response.status_code == 200
+            # إعادة المحاولة عند الفشل
+            for attempt in range(max_retries):
+                try:
+                    response = requests.post(
+                        f"{self.base_url}/sendMessage", 
+                        json=payload, 
+                        timeout=15
+                    )
+                    
+                    if response.status_code == 200:
+                        logger.info(f"✅ تم إرسال إشعار Telegram بنجاح")
+                        return True
+                    else:
+                        logger.warning(f"⚠️ فشل إرسال إشعار Telegram (المحاولة {attempt + 1}): {response.status_code}")
+                        
+                        if response.status_code == 429:  # Too Many Requests
+                            retry_after = response.json().get('parameters', {}).get('retry_after', 30)
+                            logger.info(f"⏳ انتظار {retry_after} ثانية بسبب الحد الأقصى للطلبات")
+                            time.sleep(retry_after)
+                        else:
+                            time.sleep(2 ** attempt)  # Exponential backoff
+                            
+                except requests.exceptions.Timeout:
+                    logger.warning(f"⚠️ انتهت مهلة إرسال Telegram (المحاولة {attempt + 1})")
+                    time.sleep(2 ** attempt)
+                except requests.exceptions.ConnectionError:
+                    logger.warning(f"⚠️ خطأ اتصال Telegram (المحاولة {attempt + 1})")
+                    time.sleep(2 ** attempt)
+                except Exception as e:
+                    logger.error(f"❌ خطأ غير متوقع في إرسال Telegram (المحاولة {attempt + 1}): {e}")
+                    time.sleep(2 ** attempt)
+            
+            logger.error(f"❌ فشل جميع محاولات إرسال Telegram")
+            return False
                 
         except Exception as e:
-            logger.error(f"❌ خطأ في إرسال رسالة تلغرام: {e}")
+            logger.error(f"❌ خطأ حرج في إرسال رسالة تلغرام: {e}")
             return False
 
-    def send_prediction_alert(self, symbol, prediction, current_price):
-        """إرسال إشعار تنبؤ بالتقاطع"""
-        try:
-            direction_emoji = "🟢" if prediction['direction'] == 'LONG' else "🔴"
-            probability_color = "🟢" if prediction['probability'] >= 0.8 else "🟡" if prediction['probability'] >= 0.7 else "🟠"
-        
-            message = (
-                f"🔮 <b>تنبؤ بالتقاطع القريب</b> {direction_emoji}\n"
-                f"العملة: {symbol}\n"
-                f"الاتجاه المتوقع: {prediction['direction']}\n"
-                f"📊 <b>الاحتمالية:</b> {probability_color} {prediction['probability']:.1%}\n"
-                f"⏱️ <b>الوقت المتوقع:</b> {prediction['expected_time']}\n"
-                f"📏 <b>المسافة الحالية:</b> {prediction['current_distance_pct']:.3f}%\n"
-                f"💪 <b>قوة الزخم:</b> {prediction['momentum_strength']:.1%}\n"
-                f"💰 <b>السعر الحالي:</b> ${current_price:.4f}\n"
-                f"📈 <b>المؤشرات:</b>\n"
-                f"• EMA 9: {prediction['indicators']['ema9']:.4f}\n"
-                f"• EMA 21: {prediction['indicators']['ema21']:.4f}\n"
-                f"• المسافة: {prediction['indicators']['ema9'] - prediction['indicators']['ema21']:.4f}\n"
-                f"🕒 <b>الوقت:</b> {datetime.now(damascus_tz).strftime('%H:%M:%S')}\n"
-                f"⚠️ <i>هذا تنبؤ وليس إشارة تداول</i>"
-            )
-        
-            return self.send_message(message)
-        
-        except Exception as e:
-            logger.error(f"❌ خطأ في إرسال إشعار التنبؤ: {e}")
-            return False
-
-    def send_enhanced_prediction_alerts(self, symbol, prediction, action):
-        """إشعارات متقدمة للتنبؤ بالتقاطع"""
-        try:
-            if action == "ALERT":
-                message = (
-                    f"🚨 <b>تنبؤ عالي الاحتمالية</b>\n"
-                    f"العملة: {symbol}\n"
-                    f"الاتجاه: {prediction['direction']}\n"
-                    f"🎯 الاحتمالية: {prediction['probability']:.1%}\n"
-                    f"⏰ متوقع خلال: {prediction['expected_time']}\n"
-                    f"💪 قوة الزخم: {prediction['momentum_strength']:.1%}\n"
-                    f"📏 المسافة: {prediction['current_distance_pct']:.3f}%\n"
-                    f"🔄 تم تفعيل المراقبة المكثفة\n"
-                    f"🕒 {datetime.now(damascus_tz).strftime('%H:%M:%S')}"
-                )
-        
-            elif action == "EXECUTION":
-                message = (
-                    f"✅ <b>تنفيذ ناجح للتقاطع المتوقع</b>\n"
-                    f"العملة: {symbol}\n"
-                    f"الاتجاه: {prediction['direction']}\n"
-                    f"🎯 دقة التنبؤ: {prediction['probability']:.1%}\n"
-                    f"⚡ تم التنفيذ خلال: {prediction['expected_time']}\n"
-                    f"📊 الصفقة: PREDICTED_CROSSOVER\n"
-                    f"🕒 {datetime.now(damascus_tz).strftime('%H:%M:%S')}"
-                )
-        
-            elif action == "CANCELLED":
-                message = (
-                    f"❌ <b>إلغاء التنبؤ</b>\n"
-                    f"العملة: {symbol}\n"
-                    f"السبب: شروط التقاطع لم تتوفر\n"
-                    f"🕒 {datetime.now(damascus_tz).strftime('%H:%M:%S')}"
-                )
-        
-            return self.send_message(message)
-        
-        except Exception as e:
-            logger.error(f"❌ خطأ في إرسال إشعار التنبؤ المتقدم: {e}")
-            return False
-    
     def send_signal_alert(self, symbol, signal, current_price, trend_status=None):
-        """إرسال إشعار إشارة مع بيانات الماكد - معدل"""
+        """إرسال إشعار إشارة مع تحسينات الأمان"""
         try:
+            # التحقق من صحة البيانات
+            if not symbol or not signal or current_price is None:
+                logger.error(f"❌ بيانات غير كافية لإرسال إشعار: symbol={symbol}, signal={bool(signal)}, price={current_price}")
+                return False
+            
             if signal.get('signal_type') == 'CROSSOVER_PREDICTION':
                 return self.send_prediction_alert(symbol, signal, current_price)
-           
-            if current_price is None:
-                logger.error(f"❌ لا يمكن إرسال إشعار لـ {symbol} لأن السعر غير متوفر")
-                return False
+            
+            # التحقق من البيانات المطلوبة
+            required_fields = ['direction', 'signal_type', 'confidence', 'reason']
+            for field in required_fields:
+                if field not in signal:
+                    logger.error(f"❌ حقل مفقود في الإشارة: {field}")
+                    return False
 
             direction_emoji = "🟢" if signal['direction'] == 'LONG' else "🔴"
             signal_type_emoji = {
@@ -983,33 +978,37 @@ class TelegramNotifier:
                 'PULLBACK': '📈', 
                 'MOMENTUM': '⚡',
                 'BREAKOUT': '🚀',
-                'RENEWAL': '🔄'
+                'RENEWAL': '🔄',
+                'PREDICTED_CROSSOVER': '🔮'
             }.get(signal['signal_type'], '📊')
         
             # معلومات الماكد
             macd_info = ""
-            if 'macd_status' in signal:
+            if 'macd_status' in signal and signal['macd_status']:
                 macd = signal['macd_status']
-                macd_emoji = "🟢" if macd['bullish'] else "🔴"
-                histogram_emoji = "📈" if macd['histogram_increasing'] else "📉"
+                macd_emoji = "🟢" if macd.get('bullish', False) else "🔴"
+                histogram_emoji = "📈" if macd.get('histogram_increasing', False) else "📉"
                 macd_info = (
                     f"🔮 <b>تحليل الماكد:</b>\n"
-                    f"• الحالة: {macd_emoji} {'صاعد' if macd['bullish'] else 'هابط'}\n"
-                    f"• الماكد: {macd['macd']:.6f}\n"
-                    f"• الإشارة: {macd['signal']:.6f}\n"
-                    f"• الهيستوجرام: {histogram_emoji} {macd['histogram']:.6f}\n"
+                    f"• الحالة: {macd_emoji} {'صاعد' if macd.get('bullish', False) else 'هابط'}\n"
+                    f"• الماكد: {macd.get('macd', 0):.6f}\n"
+                    f"• الإشارة: {macd.get('signal', 0):.6f}\n"
+                    f"• الهيستوجرام: {histogram_emoji} {macd.get('histogram', 0):.6f}\n"
                 )
         
             trend_info = ""
-            if trend_status:
-                trend_duration = (datetime.now(damascus_tz) - trend_status['start_time']).total_seconds() / 60
-                trend_info = (
-                    f"📊 <b>حالة الترند:</b>\n"
-                    f"• الصفقات: {trend_status['trades_count']}\n"
-                    f"• المدة: {trend_duration:.1f} دقيقة\n"
-                    f"• إجمالي PnL: {trend_status.get('total_pnl', 0):+.2f}%\n"
-                    f"• تأكيدات الماكد: {trend_status.get('macd_confirmations', 0)}\n"
-                )
+            if trend_status and isinstance(trend_status, dict):
+                try:
+                    trend_duration = (datetime.now(damascus_tz) - trend_status['start_time']).total_seconds() / 60
+                    trend_info = (
+                        f"📊 <b>حالة الترند:</b>\n"
+                        f"• الصفقات: {trend_status.get('trades_count', 0)}\n"
+                        f"• المدة: {trend_duration:.1f} دقيقة\n"
+                        f"• إجمالي PnL: {trend_status.get('total_pnl', 0):+.2f}%\n"
+                        f"• تأكيدات الماكد: {trend_status.get('macd_confirmations', 0)}\n"
+                    )
+                except Exception as e:
+                    logger.warning(f"⚠️ خطأ في معالجة بيانات الترند: {e}")
         
             message = (
                 f"{direction_emoji} <b>إشارة تداول جديدة</b> {signal_type_emoji}\n"
@@ -1017,12 +1016,12 @@ class TelegramNotifier:
                 f"الاتجاه: {signal['direction']}\n"
                 f"النوع: {signal['signal_type']}\n"
                 f"السعر: ${current_price:.4f}\n"
-                f"الثقة: {signal['confidence']:.2%}\n"
-                f"السبب: {signal['reason']}\n"
+                f"الثقة: {signal.get('confidence', 0):.2%}\n"
+                f"السبب: {signal.get('reason', 'غير محدد')}\n"
                 f"📊 المؤشرات:\n"
-                f"• EMA 9: {signal['indicators']['ema9']:.4f}\n"
-                f"• EMA 21: {signal['indicators']['ema21']:.4f}\n"
-                f"• RSI: {signal['indicators']['rsi']:.1f}\n"
+                f"• EMA 9: {signal['indicators'].get('ema9', 0):.4f}\n"
+                f"• EMA 21: {signal['indicators'].get('ema21', 0):.4f}\n"
+                f"• RSI: {signal['indicators'].get('rsi', 0):.1f}\n"
                 f"{macd_info}"
                 f"{trend_info}"
                 f"الوقت: {datetime.now(damascus_tz).strftime('%H:%M:%S')}"
@@ -1033,6 +1032,38 @@ class TelegramNotifier:
         except Exception as e:
             logger.error(f"❌ خطأ في إرسال إشعار الإشارة: {e}")
             return False
+
+    def send_trade_closed_alert(self, symbol, trade_data, close_reason, pnl_pct):
+        """إرسال إشعار إغلاق صفقة محسّن"""
+        try:
+            if not trade_data or not symbol:
+                logger.error("❌ بيانات غير كافية لإشعار الإغلاق")
+                return False
+            
+            direction = trade_data.get('side', 'UNKNOWN')
+            entry_price = trade_data.get('entry_price', 0)
+            close_price = trade_data.get('close_price', 0)
+            
+            pnl_emoji = "🟢" if pnl_pct > 0 else "🔴"
+            
+            message = (
+                f"🔒 <b>إغلاق صفقة</b>\n"
+                f"العملة: {symbol}\n"
+                f"الاتجاه: {direction}\n"
+                f"سعر الدخول: ${entry_price:.4f}\n"
+                f"سعر الخروج: ${close_price:.4f}\n"
+                f"الربح/الخسارة: {pnl_emoji} {pnl_pct:+.2f}%\n"
+                f"السبب: {close_reason}\n"
+                f"الوقت: {datetime.now(damascus_tz).strftime('%H:%M:%S')}"
+            )
+            
+            return self.send_message(message)
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في إرسال إشعار الإغلاق: {e}")
+            return False           
+
+            
 
 class AdvancedMACDTradeManager:
     def __init__(self, client, notifier, trend_manager, bot_instance=None):
@@ -1424,18 +1455,49 @@ class AdvancedMACDTradeManager:
             logger.error(f"❌ خطأ في معالجة الإغلاق الخارجي: {e}")
     
     def close_trade(self, symbol, reason, current_price):
-        """إغلاق الصفقة"""
+
+    def close_trade(self, symbol, reason, current_price):
+        """إغلاق الصفقة مع تحسين الإشعارات ومعالجة الأخطاء"""
         try:
+            # التحقق من وجود الصفقة
             trade = self.active_trades.get(symbol)
-            if not trade or trade['status'] != 'open':
+            if not trade:
+                logger.warning(f"⚠️ لا توجد صفقة نشطة لـ {symbol}")
                 return False
             
+            if trade['status'] != 'open':
+                logger.warning(f"⚠️ صفقة {symbol} ليست مفتوحة (الحالة: {trade['status']})")
+                return False
+        
+            # التحقق من البيانات المطلوبة
+            required_fields = ['quantity', 'side', 'entry_price']
+            for field in required_fields:
+                if field not in trade:
+                    logger.error(f"❌ حقل مفقود في صفقة {symbol}: {field}")
+                    return False
+        
             quantity = trade['quantity']
             direction = trade['side']
+            entry_price = trade['entry_price']
+        
+            # التحقق من صحة البيانات
+            if quantity <= 0:
+                logger.error(f"❌ كمية غير صالحة لـ {symbol}: {quantity}")
+                return False
             
+            if entry_price <= 0:
+                logger.error(f"❌ سعر دخول غير صالح لـ {symbol}: {entry_price}")
+                return False
+            
+            if current_price <= 0:
+                logger.error(f"❌ سعر حالى غير صالح لـ {symbol}: {current_price}")
+                return False
+        
             # تنفيذ أمر الإغلاق
             close_side = 'SELL' if direction == 'LONG' else 'BUY'
-            
+        
+            logger.info(f"🔄 محاولة إغلاق {symbol}: {direction} -> {close_side}, الكمية: {quantity}")
+        
             order = self.client.futures_create_order(
                 symbol=symbol,
                 side=close_side,
@@ -1443,54 +1505,97 @@ class AdvancedMACDTradeManager:
                 quantity=quantity,
                 reduceOnly=True
             )
-            
+        
             if order and order['orderId']:
-                # تحديث بيانات الصفقة
-                entry_price = trade['entry_price']
+                # حساب الربح/الخسارة
                 if direction == 'LONG':
                     pnl_pct = (current_price - entry_price) / entry_price * 100
                 else:
                     pnl_pct = (entry_price - current_price) / entry_price * 100
-                
+            
                 # تحديث الترند
                 self.trend_manager.update_trend_pnl(symbol, pnl_pct)
-                
+            
+                # تحديث بيانات الصفقة
                 trade.update({
                     'status': 'closed',
                     'close_price': current_price,
                     'close_time': datetime.now(damascus_tz),
                     'pnl_pct': pnl_pct,
-                    'close_reason': reason
+                    'close_reason': reason,
+                    'order_id': order['orderId']
                 })
-                
-                # إرسال إشعار
+            
+                # إرسال إشعار محسّن
                 if self.notifier:
                     pnl_emoji = "🟢" if pnl_pct > 0 else "🔴"
                     trend_status = self.trend_manager.get_trend_status(symbol)
+                
                     trend_info = ""
                     if trend_status:
-                        trend_info = f"📊 الترند: {trend_status['trades_count']} صفقات | PnL: {trend_status['total_pnl']:+.2f}%\n"
-                    
+                        trend_duration = (datetime.now(damascus_tz) - trend_status['start_time']).total_seconds() / 60
+                        trend_info = (
+                            f"📊 <b>حالة الترند:</b>\n"
+                            f"• الصفقات: {trend_status['trades_count']}\n"
+                            f"• المدة: {trend_duration:.1f} دقيقة\n"
+                            f"• إجمالي PnL: {trend_status.get('total_pnl', 0):+.2f}%\n"
+                            f"• الناجحة: {trend_status.get('successful_trades', 0)}\n"
+                            f"• الفاشلة: {trend_status.get('failed_trades', 0)}\n"
+                        )
+                
+                    # معلومات الصفقة
+                    trade_duration = (datetime.now(damascus_tz) - trade['timestamp']).total_seconds() / 60
+                
                     message = (
                         f"🔒 <b>إغلاق صفقة</b>\n"
                         f"العملة: {symbol}\n"
                         f"الاتجاه: {direction}\n"
+                        f"الكمية: {quantity:.6f}\n"
                         f"سعر الدخول: ${entry_price:.4f}\n"
                         f"سعر الخروج: ${current_price:.4f}\n"
+                        f"المدة: {trade_duration:.1f} دقيقة\n"
                         f"الربح/الخسارة: {pnl_emoji} {pnl_pct:+.2f}%\n"
                         f"{trend_info}"
                         f"السبب: {reason}\n"
+                        f"رقم الأمر: {order['orderId']}\n"
                         f"الوقت: {datetime.now(damascus_tz).strftime('%H:%M:%S')}"
                     )
-                    self.notifier.send_message(message)
                 
+                    # إرسال الإشعار مع إعادة المحاولة
+                    notification_sent = self.notifier.send_message(message, 'trade_close')
+                    if not notification_sent:
+                        logger.warning(f"⚠️ فشل إرسال إشعار إغلاق لـ {symbol}")
+            
                 logger.info(f"✅ تم إغلاق صفقة {symbol} - {reason} - PnL: {pnl_pct:+.2f}%")
+            
+                # تحديث الإحصائيات
+                if pnl_pct > 0:
+                    self.performance_stats['winning_trades'] += 1
+                else:
+                    self.performance_stats['losing_trades'] += 1
+                self.performance_stats['trades_closed'] += 1
+            
                 return True
-            
-            return False
-            
+            else:
+                logger.error(f"❌ فشل إنشاء أمر إغلاق لـ {symbol}")
+                return False
+        
         except Exception as e:
             logger.error(f"❌ فشل إغلاق صفقة {symbol}: {e}")
+        
+            # محاولة إرسال إشعار خطأ
+            try:
+                if self.notifier:
+                    error_message = (
+                        f"❌ <b>فشل إغلاق صفقة</b>\n"
+                        f"العملة: {symbol}\n"
+                        f"السبب: {str(e)[:100]}\n"
+                        f"الوقت: {datetime.now(damascus_tz).strftime('%H:%M:%S')}"
+                    )
+                    self.notifier.send_message(error_message, 'error')
+            except:
+                pass
+            
             return False
     
     def add_trade(self, symbol, trade_data, signal_type, macd_status):
