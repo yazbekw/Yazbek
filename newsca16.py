@@ -785,37 +785,103 @@ class AdvancedMACDSignalGenerator:
         return None
     
     def _analyze_momentum_signal(self, indicators, symbol, current_price, trend_direction, data, macd_status):
-        """تحليل إشارة تأكيد الزخم مع الماكد"""
-        # تحقق من 3 شموع متتالية في اتجاه الترند
+        """تحليل إشارة تأكيد الزخم مع شروط أقسى"""
+    
+        # 🔴 رفض إذا RSI في منطقة ذروة بيع/شراء
+        if trend_direction == 'SHORT' and indicators['rsi'] < 30:
+            logger.info(f"⏭️ تخطي {symbol} - RSI في ذروة البيع ({indicators['rsi']:.1f})")
+            return None
+        if trend_direction == 'LONG' and indicators['rsi'] > 70:
+            logger.info(f"⏭️ تخطي {symbol} - RSI في ذروة الشراء ({indicators['rsi']:.1f})")
+            return None
+    
+        # 🔴 رفض إذا الماكد ضعيف جداً (في ذروة)
+        if abs(macd_status['macd']) > 1.0:  # الماكد كبير جداً - ذروة
+            logger.info(f"⏭️ تخطي {symbol} - الماكد في ذروة ({macd_status['macd']:.4f})")
+            return None
+    
+        # 🔴 رفض إذا الهيستوجرام ضعيف (قيمة سالبة كبيرة)
+        if macd_status['histogram'] < -1.5:  # هيستوجرام ضعيف جداً
+            logger.info(f"⏭️ تخطي {symbol} - الهيستوجرام ضعيف ({macd_status['histogram']:.4f})")
+            return None
+    
+        # 🔴 رفض إذا السعر بعيد جداً عن المتوسطات
+        distance_to_ema9 = abs(current_price - indicators['ema9']) / indicators['ema9'] * 100
+        distance_to_ema21 = abs(current_price - indicators['ema21']) / indicators['ema21'] * 100
+    
+        if distance_to_ema9 > 0.5 or distance_to_ema21 > 0.8:  # بعيد جداً عن المتوسطات
+            logger.info(f"⏭️ تخطي {symbol} - السعر بعيد عن المتوسطات (EMA9: {distance_to_ema9:.2f}%, EMA21: {distance_to_ema21:.2f}%)")
+            return None
+    
+        # 🔴 رفض إذا حجم التداول ضعيف
+        volume_ratio = indicators['volume'] / indicators['volume_avg'] if indicators['volume_avg'] > 0 else 1
+        if volume_ratio < 0.8:  # حجم أقل من 80% من المتوسط
+            logger.info(f"⏭️ تخطي {symbol} - حجم تداول ضعيف ({volume_ratio:.2f})")
+            return None
+    
+        # 🔴 رفض إذا الترند قريب من نهايته (للإشارات الإضافية فقط)
+        trend_status = self.trend_manager.get_trend_status(symbol)
+        if trend_status and trend_status['status'] == 'active':
+            trend_duration = (datetime.now(damascus_tz) - trend_status['start_time']).total_seconds() / 60
+            remaining_time = TRADING_SETTINGS['max_trend_duration_minutes'] - trend_duration
+        
+            if remaining_time < 5:  # أقل من 5 دقائق متبقية
+                logger.info(f"⏭️ تخطي {symbol} - الترند قريب من الإنتهاء ({remaining_time:.1f} دقيقة متبقية)")
+                return None
+    
+        # الشروط الأصلية للزخم - تحقق من 3 شموع متتالية في اتجاه الترند
         df = data.tail(3)
         if len(df) < 3:
             return None
-        
+    
         if trend_direction == 'LONG':
+            # للشراء: 3 شموع صاعدة متتالية
             consecutive_bullish = all(df['close'] > df['open'])
             rsi_trend = indicators['rsi'] > 50
-        else:
+            price_confirmation = current_price > indicators['ema9']  # فوق EMA9
+        
+            if consecutive_bullish and rsi_trend and price_confirmation:
+                self.trend_manager.log_macd_signal(symbol, 'MOMENTUM', macd_status, 'ADDITIONAL_ENTRY')
+            
+                return {
+                    'symbol': symbol,
+                    'direction': trend_direction,
+                    'confidence': 0.80,
+                    'reason': f'تأكيد الزخم - 3 شموع صاعدة متتالية + RSI فوق 50 + سعر فوق EMA9',
+                    'indicators': indicators,
+                    'timestamp': datetime.now(damascus_tz),
+                    'current_price': current_price,
+                    'signal_type': 'MOMENTUM',
+                    'priority': 75,
+                    'macd_status': macd_status,
+                    'volume_ratio': volume_ratio,
+                    'distance_to_ema9': distance_to_ema9
+                }
+    
+        else:  # SHORT
+            # للبيع: 3 شموع هابطة متتالية
             consecutive_bearish = all(df['close'] < df['open'])
             rsi_trend = indicators['rsi'] < 50
+            price_confirmation = current_price < indicators['ema9']  # تحت EMA9
         
-        if ((trend_direction == 'LONG' and consecutive_bullish and rsi_trend) or
-            (trend_direction == 'SHORT' and consecutive_bearish and rsi_trend)):
+            if consecutive_bearish and rsi_trend and price_confirmation:
+                self.trend_manager.log_macd_signal(symbol, 'MOMENTUM', macd_status, 'ADDITIONAL_ENTRY')
             
-            self.trend_manager.log_macd_signal(symbol, 'MOMENTUM', macd_status, 'ADDITIONAL_ENTRY')
-            
-            return {
-                'symbol': symbol,
-                'direction': trend_direction,
-                'confidence': 0.80,
-                'reason': 'تأكيد الزخم - 3 شموع متتالية في اتجاه الترند مع تأكيد الماكد',
-                'indicators': indicators,
-                'timestamp': datetime.now(damascus_tz),
-                'current_price': current_price,
-                'signal_type': 'MOMENTUM',
-                'priority': 75,
-                'macd_status': macd_status
-            }
-        
+                return {
+                    'symbol': symbol,
+                    'direction': trend_direction,
+                    'confidence': 0.80,
+                    'reason': f'تأكيد الزخم - 3 شموع هابطة متتالية + RSI تحت 50 + سعر تحت EMA9',
+                    'indicators': indicators,
+                    'timestamp': datetime.now(damascus_tz),
+                    'current_price': current_price,
+                    'signal_type': 'MOMENTUM',
+                    'priority': 75,
+                    'macd_status': macd_status,
+                    'volume_ratio': volume_ratio,
+                    'distance_to_ema9': distance_to_ema9
+                }
+    
         return None
     
     def _analyze_breakout_signal(self, indicators, symbol, current_price, trend_direction, macd_status):
