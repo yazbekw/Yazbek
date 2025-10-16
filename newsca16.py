@@ -634,6 +634,15 @@ class AdvancedMACDSignalGenerator:
         ema9_cross_below_21 = (indicators['ema9'] < indicators['ema21'] and 
                               indicators['ema9_prev'] >= indicators['ema21_prev'])
 
+        # 🔴 🔴 🔴 الشرط المضاف - المسافات البادئة صحيحة هنا 🔴 🔴 🔴
+        prev_distance_pct = abs(indicators['ema9_prev'] - indicators['ema21_prev']) / ((indicators['ema9_prev'] + indicators['ema21_prev'])/2) * 100
+        min_required_distance = 0.1  # 0.1% حد أدنى للمسافة
+
+        if prev_distance_pct < min_required_distance:
+            logger.info(f"⏭️ تخطي {symbol} - التقاطع من مسافة قريبة جداً: {prev_distance_pct:.3f}%")
+            return None
+        # 🔴 🔴 🔴 نهاية الشرط المضاف 🔴 🔴 🔴
+
         # الشروط الجديدة للدخول المبكر - استخدام 20% من الشمعة السابقة
         prev_candle_range = indicators['prev_high'] - indicators['prev_low']
     
