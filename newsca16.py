@@ -1574,13 +1574,7 @@ class AdvancedMACDTradeManager:
                         logger.warning(f"⚠️ فشل إرسال إشعار إغلاق لـ {symbol}")
             
                 logger.info(f"✅ تم إغلاق صفقة {symbol} - {reason} - PnL: {pnl_pct:+.2f}%")
-            
-                # تحديث الإحصائيات
-                if pnl_pct > 0:
-                    self.performance_stats['winning_trades'] += 1
-                else:
-                    self.performance_stats['losing_trades'] += 1
-                self.performance_stats['trades_closed'] += 1
+                        
             
                 return True
             else:
