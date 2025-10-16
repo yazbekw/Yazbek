@@ -868,7 +868,7 @@ class AdvancedMACDSignalGenerator:
         return None
 
 
- class TelegramNotifier:
+class TelegramNotifier:
     """مدير إشعارات التلغرام محسّن"""
     
     def __init__(self, token, chat_id):
