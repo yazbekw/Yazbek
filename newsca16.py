@@ -1455,8 +1455,6 @@ class AdvancedMACDTradeManager:
             logger.error(f"❌ خطأ في معالجة الإغلاق الخارجي: {e}")
     
     def close_trade(self, symbol, reason, current_price):
-
-    def close_trade(self, symbol, reason, current_price):
         """إغلاق الصفقة مع تحسين الإشعارات ومعالجة الأخطاء"""
         try:
             # التحقق من وجود الصفقة
