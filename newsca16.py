@@ -1138,10 +1138,6 @@ class AdvancedMACDTradeManager:
         except Exception as e:
             logger.error(f"❌ خطأ في التحقق من الإشارات المعاكسة لـ {symbol}: {e}")
             return True  # 🔴 التصحيح: في حالة الخطأ، منع فتح صفقات جديدة
-        
-            except Exception as e:
-                logger.error(f"❌ خطأ في التحقق من الإشارات المعاكسة لـ {symbol}: {e}")
-                return False
 
     def enhanced_trade_monitoring(self):
         """مراقبة محسنة للصفقات مع معالجة الأخطاء - مصححة ومحسنة"""
