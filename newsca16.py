@@ -636,7 +636,7 @@ class AdvancedMACDSignalGenerator:
 
         # 🔴 🔴 🔴 الشرط المضاف - المسافات البادئة صحيحة هنا 🔴 🔴 🔴
         prev_distance_pct = abs(indicators['ema9_prev'] - indicators['ema21_prev']) / ((indicators['ema9_prev'] + indicators['ema21_prev'])/2) * 100
-        min_required_distance = 0.1  # 0.1% حد أدنى للمسافة
+        min_required_distance = 0.05  # 0.1% حد أدنى للمسافة
 
         if prev_distance_pct < min_required_distance:
             logger.info(f"⏭️ تخطي {symbol} - التقاطع من مسافة قريبة جداً: {prev_distance_pct:.3f}%")
