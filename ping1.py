@@ -14,6 +14,7 @@ URLS = [
     "https://yazbek-1-ozjd.onrender.com",
     "https://yazbek-3.onrender.com",
     "https://top-and-bottom-hunter.onrender.com",
+    "https://testnet-7t23.onrender.com",
     "https://crypto-scalping.onrender.com"
 ]
 
