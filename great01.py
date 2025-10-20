@@ -880,6 +880,62 @@ def close_trade(trade_id):
         logger.error(f"❌ خطأ في إغلاق الصفقة: {e}")
         return jsonify({'success': False, 'message': f'خطأ: {str(e)}'})
 
+@app.route('/api/heartbeat', methods=['POST'])
+@require_api_key
+def receive_heartbeat():
+    """استقبال نبضات من البوت المرسل"""
+    try:
+        data = request.get_json()
+        
+        if not data or not data.get('heartbeat'):
+            return jsonify({'success': False, 'message': 'بيانات نبضة غير صالحة'})
+        
+        source = data.get('source', 'unknown')
+        timestamp = data.get('timestamp')
+        syria_time = data.get('syria_time')
+        system_stats = data.get('system_stats', {})
+        
+        logger.info(f"💓 استقبال نبضة من {source} - الوقت: {syria_time}")
+        
+        # يمكنك هنا حفظ إحصائيات النبضات إذا أردت
+        response_data = {
+            'success': True,
+            'message': 'تم استقبال النبضة بنجاح',
+            'executor_status': 'active',
+            'active_trades': len(SimpleTradeBot.get_instance().trade_executor.get_active_trades()),
+            'executor_version': '3.0-multi-level',
+            'timestamp': datetime.now(damascus_tz).isoformat(),
+            'received_heartbeat': {
+                'source': source,
+                'syria_time': syria_time,
+                'scanner_stats': system_stats
+            }
+        }
+        
+        # إرسال إشعار تلغرام للنبضة (اختياري)
+        bot = SimpleTradeBot.get_instance()
+        if bot.notifier:
+            heartbeat_msg = (
+                f"💓 <b>نبضة اتصال من البوت المرسل</b>\n"
+                f"المصدر: {source}\n"
+                f"الوقت السوري: {syria_time}\n"
+                f"الحالة: ✅ اتصال نشط\n"
+                f"الصفقات النشطة: {response_data['active_trades']}\n"
+                f"إحصائيات الماسح:\n"
+                f"• عمليات المسح: {system_stats.get('total_scans', 0)}\n"
+                f"• التنبيهات المرسلة: {system_stats.get('total_alerts_sent', 0)}\n"
+                f"• الإشارات المرسلة: {system_stats.get('total_signals_sent', 0)}\n"
+                f"آخر مسح: {system_stats.get('last_scan_time', 'غير معروف')}\n"
+                f"الوقت: {datetime.now(damascus_tz).strftime('%H:%M:%S')}"
+            )
+            bot.notifier.send_message(heartbeat_msg)
+        
+        return jsonify(response_data)
+        
+    except Exception as e:
+        logger.error(f"❌ خطأ في استقبال النبضة: {e}")
+        return jsonify({'success': False, 'message': f'خطأ في استقبال النبضة: {str(e)}'})
+
 @app.route('/recent_signals')
 def get_recent_signals():
     """الحصول على آخر الإشارات المستلمة"""
