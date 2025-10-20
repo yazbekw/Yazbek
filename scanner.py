@@ -33,7 +33,7 @@ EXECUTE_TRADES = os.getenv("EXECUTE_TRADES", "false").lower() == "true"
 # إعدادات التداول
 SCAN_INTERVAL = 1200  # 20 دقيقة بين كل فحص (بالثواني)
 HEARTBEAT_INTERVAL = 1800  # 30 دقيقة بين كل نبضة (بالثواني)
-EXECUTOR_HEARTBEAT_INTERVAL = 3600  # ⬅️ جديد: ساعة بين كل نبضة للمنفذ (بالثواني)
+EXECUTOR_HEARTBEAT_INTERVAL = 120  # ⬅️ جديد: ساعة بين كل نبضة للمنفذ (بالثواني)
 CONFIDENCE_THRESHOLD = 50  # الحد الأدنى للنقاط لإرسال الإشعار (إشارات متوسطة وفوق)
 
 # الأصول والأطر الزمنية
