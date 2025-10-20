@@ -15,7 +15,7 @@ URLS = [
     "https://yazbek-3.onrender.com",
     "https://scanner-zwlt.onrender.com",
     "https://testnet-7t23.onrender.com",
-    "https://crypto-scalping.onrender.com"
+    "https://trade-hbwj.onrender.com"
 ]
 
 def send_pings():
