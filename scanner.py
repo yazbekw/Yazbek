@@ -66,9 +66,9 @@ INDICATOR_WEIGHTS = {
 ALERT_LEVELS = {
     "LOW": {"min": 0, "max": 40, "emoji": "⚪", "send_alert": False, "color": "gray"},
     "MEDIUM": {"min": 41, "max": 49, "emoji": "🟡", "send_alert": True, "color": "gold"},
-    "HIGH": {"min": 50, "max": 60, "emoji": "🟠", "send_alert": True, "color": "darkorange"},
-    "STRONG": {"min": 61, "max": 70, "emoji": "🔴", "send_alert": True, "color": "red"},
-    "EXTREME": {"min": 71, "max": 100, "emoji": "💥", "send_alert": True, "color": "darkred"}
+    "HIGH": {"min": 50, "max": 65, "emoji": "🟠", "send_alert": True, "color": "darkorange"},
+    "STRONG": {"min": 66, "max": 80, "emoji": "🔴", "send_alert": True, "color": "red"},
+    "EXTREME": {"min": 81, "max": 100, "emoji": "💥", "send_alert": True, "color": "darkred"}
 }
 
 # ألوان التصميم
