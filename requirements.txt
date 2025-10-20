@@ -9,6 +9,9 @@ pytz==2022.7
 # الويب والخوادم
 flask==2.2.5
 aiohttp==3.8.4
+fastapi==0.104.1
+uvicorn==0.24.0
+pydantic==2.5.0
 
 # الرسوميات والتحليل
 matplotlib==3.7.1
