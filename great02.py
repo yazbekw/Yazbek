@@ -201,50 +201,61 @@ class MultiLevelTradeExecutor:
         return None
 
     def can_execute_trade(self, symbol, direction):
-        """التحقق من إمكانية تنفيذ الصفقة - النسخة المحسنة"""
+        """التحقق من إمكانية تنفيذ الصفقة - النسخة المصححة"""
         try:
             # التحقق من الصفقات النشطة الفعلية من Binance مباشرة
             try:
                 positions = self.client.futures_account()['positions']
                 active_symbols = []
+                symbol_positions = 0
             
                 for position in positions:
                     position_amt = float(position['positionAmt'])
-                    if position_amt != 0 and position['symbol'] == symbol:
-                        logger.warning(f"⚠️ توجد صفقة نشطة على {symbol} في Binance")
-                        return False, f"توجد صفقة نشطة على {symbol}"
-                    elif position_amt != 0:
+                    if position_amt != 0:
+                        if position['symbol'] == symbol:
+                            symbol_positions += 1
                         active_symbols.append(position['symbol'])
             
+                # ✅ السماح بصفقتين لنفس العملة بدلاً من رفض الثانية
+                if symbol_positions >= TRADING_SETTINGS['max_trades_per_symbol']:
+                    logger.warning(f"⚠️ وصل الحد الأقصى للصفقات على {symbol}: {symbol_positions}/{TRADING_SETTINGS['max_trades_per_symbol']}")
+                    return False, f"وصل الحد الأقصى للصفقات على {symbol} ({symbol_positions}/{TRADING_SETTINGS['max_trades_per_symbol']})"
+            
                 # التحقق من العدد الإجمالي للصفقات النشطة
-                if len(active_symbols) >= TRADING_SETTINGS['max_simultaneous_trades']:
-                    logger.warning(f"⚠️ وصل الحد الأقصى للصفقات النشطة في Binance: {len(active_symbols)}")
-                    return False, f"وصل الحد الأقصى للصفقات النشطة: {len(active_symbols)}"
+                unique_active_symbols = set(active_symbols)
+                if len(unique_active_symbols) >= TRADING_SETTINGS['max_simultaneous_trades']:
+                    logger.warning(f"⚠️ وصل الحد الأقصى للصفقات النشطة في Binance: {len(unique_active_symbols)}")
+                    return False, f"وصل الحد الأقصى للصفقات النشطة: {len(unique_active_symbols)}"
                 
             except Exception as binance_error:
                 logger.warning(f"⚠️ لا يمكن التحقق من صفقات Binance: {binance_error}")
                 # العودة للتحقق المحلي إذا فشل الاتصال بـ Binance
                 active_trades = self.get_active_trades()
+                symbol_trades_count = sum(1 for trade in active_trades.values() 
+                                if trade['symbol'] == symbol and trade['status'] == 'open')
+            
+                if symbol_trades_count >= TRADING_SETTINGS['max_trades_per_symbol']:
+                    return False, f"وصل الحد الأقصى للصفقات على {symbol} ({symbol_trades_count}/{TRADING_SETTINGS['max_trades_per_symbol']})"
+            
                 if len(active_trades) >= TRADING_SETTINGS['max_simultaneous_trades']:
                     return False, "وصل الحد الأقصى للصفقات النشطة"
-            
-                
+        
             # التحقق من الرصيد المتاح
             try:
                 balance_info = self.client.futures_account_balance()
                 usdt_balance = next((float(b['balance']) for b in balance_info if b['asset'] == 'USDT'), 0)
-            
+        
                 required_margin = TRADING_SETTINGS['base_trade_amount']
                 if usdt_balance < required_margin:
                     logger.warning(f"⚠️ رصيد غير كافي: {usdt_balance:.2f} USDT < {required_margin} USDT")
                     return False, f"رصيد غير كافي: {usdt_balance:.2f} USDT"
-                
+            
             except Exception as balance_error:
                 logger.warning(f"⚠️ لا يمكن التحقق من الرصيد: {balance_error}")
-        
+    
             logger.info(f"✅ يمكن تنفيذ صفقة {symbol} - التحقق بنجاح")
             return True, "يمكن تنفيذ الصفقة"
-        
+    
         except Exception as e:
             logger.error(f"❌ خطأ في التحقق من إمكانية التنفيذ: {e}")
             return False, f"خطأ في التحقق: {str(e)}"    
@@ -588,7 +599,7 @@ class SimpleSignalReceiver:
                 symbol_trades_count = sum(1 for trade in active_trades.values() 
                                     if trade['symbol'] == symbol and trade['status'] == 'open')
             
-                max_per_symbol = TRADING_SETTINGS.get('max_trades_per_symbol', 1)
+                max_per_symbol = TRADING_SETTINGS.get('max_trades_per_symbol', 2)
             
                 if symbol_trades_count >= max_per_symbol:
                     logger.warning(f"⚠️ وصل الحد الأقصى للصفقات على {symbol}: {symbol_trades_count}/{max_per_symbol}")
