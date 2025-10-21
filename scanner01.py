@@ -46,7 +46,7 @@ SUPPORTED_COINS = {
     #'ltc': {'name': 'Litecoin', 'binance_symbol': 'LTCUSDT', 'symbol': 'LTC'},
     #'ada': {'name': 'Cardano', 'binance_symbol': 'ADAUSDT', 'symbol': 'ADA'},
     #'avax': {'name': 'Avalanche', 'binance_symbol': 'AVAXUSDT', 'symbol': 'AVAX'},
-    #'dot': {'name': 'Polkadot', 'binance_symbol': 'DOTUSDT', 'symbol': 'DOT'},
+    'dot': {'name': 'Polkadot', 'binance_symbol': 'DOTUSDT', 'symbol': 'DOT'},
     'link': {'name': 'Chainlink', 'binance_symbol': 'LINKUSDT', 'symbol': 'LINK'},
 }
 
