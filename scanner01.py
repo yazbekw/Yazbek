@@ -38,9 +38,16 @@ CONFIDENCE_THRESHOLD = 50  # الحد الأدنى للنقاط لإرسال ا�
 
 # الأصول والأطر الزمنية
 SUPPORTED_COINS = {
-    'sol': {'name': 'Solana', 'binance_symbol': 'SOLUSDT', 'symbol': 'SOL'},
+    #'btc': {'name': 'Bitcoin', 'binance_symbol': 'BTCUSDT', 'symbol': 'BTC'},
     'eth': {'name': 'Ethereum', 'binance_symbol': 'ETHUSDT', 'symbol': 'ETH'},
     'bnb': {'name': 'Binance Coin', 'binance_symbol': 'BNBUSDT', 'symbol': 'BNB'},
+    #'sol': {'name': 'Solana', 'binance_symbol': 'SOLUSDT', 'symbol': 'SOL'},
+    #'xrp': {'name': 'Ripple', 'binance_symbol': 'XRPUSDT', 'symbol': 'XRP'},
+    #'ltc': {'name': 'Litecoin', 'binance_symbol': 'LTCUSDT', 'symbol': 'LTC'},
+    #'ada': {'name': 'Cardano', 'binance_symbol': 'ADAUSDT', 'symbol': 'ADA'},
+    #'avax': {'name': 'Avalanche', 'binance_symbol': 'AVAXUSDT', 'symbol': 'AVAX'},
+    #'dot': {'name': 'Polkadot', 'binance_symbol': 'DOTUSDT', 'symbol': 'DOT'},
+    'link': {'name': 'Chainlink', 'binance_symbol': 'LINKUSDT', 'symbol': 'LINK'},
 }
 
 TIMEFRAMES = ['1h', '15m']
