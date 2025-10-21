@@ -22,9 +22,9 @@ load_dotenv()
 # ========== الإعدادات الأساسية ==========
 TRADING_SETTINGS = {
     'symbols': ["BNBUSDT", "ETHUSDT", "SOLUSDT"],
-    'base_trade_amount': 10,  # 5 دولار
-    'leverage': 20,  # 20x رافعة
-    'position_size': 10 * 20,  # 100 دولار حجم المركز
+    'base_trade_amount': 8,  # 5 دولار
+    'leverage': 30,  # 20x رافعة
+    'position_size': 8 * 30,  # 100 دولار حجم المركز
     'max_simultaneous_trades': 4,  # أقصى 2 صفقة في نفس الوقت
     'max_trades_per_symbol': 2,  # صفقة واحدة فقط لكل عملة
     'min_balance_required': 4,  # أقل رصيد مطلوب
@@ -34,15 +34,15 @@ TRADING_SETTINGS = {
 TAKE_PROFIT_LEVELS = {
     'LEVEL_1': {  # إشارة متوسطة (50-65 نقطة)
         'profit_target': 0.0030,  # 2.5 بالألف
-        'allocation': 0.4,  # 40% من المركز
+        'allocation': 0.5,  # 40% من المركز
     },
     'LEVEL_2': {  # إشارة قوية (66-80 نقطة)
         'profit_target': 0.0035,  # 3.0 بالألف
-        'allocation': 0.6,  # 60% من المركز
+        'allocation': 0.75,  # 60% من المركز
     },
     'LEVEL_3': {  # إشارة قوية جداً (81-100 نقطة)
         'profit_target': 0.0045,  # 3.5 بالألف
-        'allocation': 0.8,  # 80% من المركز
+        'allocation': 0.99,  # 80% من المركز
     }
 }
 
@@ -201,38 +201,56 @@ class MultiLevelTradeExecutor:
         return None
 
     def can_execute_trade(self, symbol, direction):
-        """التحقق من إمكانية تنفيذ الصفقة"""
+        """التحقق من إمكانية تنفيذ الصفقة - النسخة المحسنة"""
         try:
-            # التحقق من عدد الصفقات النشطة
-            active_trades = self.get_active_trades()
-            if len(active_trades) >= TRADING_SETTINGS['max_simultaneous_trades']:
-                logger.warning(f"⚠️ وصل الحد الأقصى للصفقات النشطة: {len(active_trades)}")
-                return False, "وصل الحد الأقصى للصفقات النشطة"
+            # التحقق من الصفقات النشطة الفعلية من Binance مباشرة
+            try:
+                positions = self.client.futures_account()['positions']
+                active_symbols = []
             
-            # التحقق من وجود صفقة نشطة على نفس العملة
-            for trade_id, trade in active_trades.items():
-                if trade['symbol'] == symbol:
-                    logger.warning(f"⚠️ توجد صفقة نشطة بالفعل على {symbol}")
-                    return False, f"توجد صفقة نشطة على {symbol}"
+                for position in positions:
+                    position_amt = float(position['positionAmt'])
+                    if position_amt != 0 and position['symbol'] == symbol:
+                        logger.warning(f"⚠️ توجد صفقة نشطة على {symbol} في Binance")
+                        return False, f"توجد صفقة نشطة على {symbol}"
+                    elif position_amt != 0:
+                        active_symbols.append(position['symbol'])
             
+                # التحقق من العدد الإجمالي للصفقات النشطة
+                if len(active_symbols) >= TRADING_SETTINGS['max_simultaneous_trades']:
+                    logger.warning(f"⚠️ وصل الحد الأقصى للصفقات النشطة في Binance: {len(active_symbols)}")
+                    return False, f"وصل الحد الأقصى للصفقات النشطة: {len(active_symbols)}"
+                
+            except Exception as binance_error:
+                logger.warning(f"⚠️ لا يمكن التحقق من صفقات Binance: {binance_error}")
+                # العودة للتحقق المحلي إذا فشل الاتصال بـ Binance
+                active_trades = self.get_active_trades()
+                if len(active_trades) >= TRADING_SETTINGS['max_simultaneous_trades']:
+                    return False, "وصل الحد الأقصى للصفقات النشطة"
+            
+                for trade_id, trade in active_trades.items():
+                    if trade['symbol'] == symbol:
+                        return False, f"توجد صفقة نشطة على {symbol}"
+        
             # التحقق من الرصيد المتاح
             try:
                 balance_info = self.client.futures_account_balance()
                 usdt_balance = next((float(b['balance']) for b in balance_info if b['asset'] == 'USDT'), 0)
-                
+            
                 required_margin = TRADING_SETTINGS['base_trade_amount']
                 if usdt_balance < required_margin:
                     logger.warning(f"⚠️ رصيد غير كافي: {usdt_balance:.2f} USDT < {required_margin} USDT")
                     return False, f"رصيد غير كافي: {usdt_balance:.2f} USDT"
-                    
+                
             except Exception as balance_error:
                 logger.warning(f"⚠️ لا يمكن التحقق من الرصيد: {balance_error}")
-            
+        
+            logger.info(f"✅ يمكن تنفيذ صفقة {symbol} - التحقق بنجاح")
             return True, "يمكن تنفيذ الصفقة"
-            
+        
         except Exception as e:
             logger.error(f"❌ خطأ في التحقق من إمكانية التنفيذ: {e}")
-            return False, f"خطأ في التحقق: {str(e)}"
+            return False, f"خطأ في التحقق: {str(e)}"    
     
     def get_trade_level(self, confidence_score):
         """تحديد مستوى التداول بناء على درجة الثقة - محدث"""
