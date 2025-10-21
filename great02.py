@@ -21,7 +21,7 @@ load_dotenv()
 
 # ========== الإعدادات الأساسية ==========
 TRADING_SETTINGS = {
-    'symbols': ["BNBUSDT", "ETHUSDT", "ETHUSDT"],
+    'symbols': ["BNBUSDT", "ETHUSDT", "SOLUSDT"],
     'base_trade_amount': 10,  # 5 دولار
     'leverage': 20,  # 20x رافعة
     'position_size': 10 * 20,  # 100 دولار حجم المركز
