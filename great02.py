@@ -564,56 +564,119 @@ class SimpleSignalReceiver:
         self.received_signals = []
     
     def process_signal(self, signal_data):
-        """معالجة إشارة من البوت الخارجي"""
+        """معالجة إشارة من البوت الخارجي - تأخذ العدد المسموح من الإعدادات"""
         try:
             logger.info(f"📨 استقبال إشارة جديدة: {signal_data}")
-            
+        
             # التحقق من صحة الإشارة
             if not self._validate_signal(signal_data):
                 return False, "إشارة غير صالحة"
-            
+        
             # حفظ الإشارة
             signal_data['received_time'] = datetime.now(damascus_tz)
             signal_data['processed'] = False
             self.received_signals.append(signal_data)
-            
+        
             # معالجة الإشارة حسب النوع
             signal_type = signal_data.get('signal_type', 'UNKNOWN')
-            
+        
             if signal_type == 'OPEN_TRADE':
+                symbol = signal_data['symbol']
+            
+                # ✅ التحقق من العدد المسموح لكل عملة من الإعدادات
+                active_trades = self.trade_executor.get_active_trades()
+                symbol_trades_count = sum(1 for trade in active_trades.values() 
+                                    if trade['symbol'] == symbol and trade['status'] == 'open')
+            
+                max_per_symbol = TRADING_SETTINGS.get('max_trades_per_symbol', 1)
+            
+                if symbol_trades_count >= max_per_symbol:
+                    logger.warning(f"⚠️ وصل الحد الأقصى للصفقات على {symbol}: {symbol_trades_count}/{max_per_symbol}")
+                    signal_data['result'] = 'FAILED'
+                    signal_data['error_reason'] = f"وصل الحد الأقصى للصفقات على {symbol} ({symbol_trades_count}/{max_per_symbol})"
+                    return False, f"وصل الحد الأقصى للصفقات على {symbol} ({symbol_trades_count}/{max_per_symbol})"
+            
+                # ✅ التحقق من العدد الإجمالي المسموح
+                total_active_trades = len(active_trades)
+                max_simultaneous = TRADING_SETTINGS.get('max_simultaneous_trades', 2)
+            
+                if total_active_trades >= max_simultaneous:
+                    logger.warning(f"⚠️ وصل الحد الأقصى الإجمالي للصفقات: {total_active_trades}/{max_simultaneous}")
+                    signal_data['result'] = 'FAILED'
+                    signal_data['error_reason'] = f"وصل الحد الأقصى الإجمالي للصفقات ({total_active_trades}/{max_simultaneous})"
+                    return False, f"وصل الحد الأقصى الإجمالي للصفقات ({total_active_trades}/{max_simultaneous})"
+            
+                # ✅ التحقق من الرصيد
+                can_execute, message = self.trade_executor.can_execute_trade(symbol, signal_data['direction'])
+            
+                if not can_execute:
+                    signal_data['result'] = 'FAILED'
+                    signal_data['error_reason'] = message
+                    return False, message
+            
+                # ✅ تنفيذ الصفقة
                 success, message = self.trade_executor.execute_trade(signal_data)
                 if success:
                     signal_data['processed'] = True
                     signal_data['result'] = 'SUCCESS'
+                    signal_data['current_symbol_trades'] = symbol_trades_count + 1
+                    signal_data['current_total_trades'] = total_active_trades + 1
                 else:
                     signal_data['result'] = 'FAILED'
+                    signal_data['error_reason'] = message
                 return success, message
-            
+        
             elif signal_type == 'CLOSE_TRADE':
                 symbol = signal_data.get('symbol')
                 reason = signal_data.get('reason', 'إغلاق بإشارة خارجية')
                 if symbol:
-                    # البحث عن الصفقة النشطة لهذه العملة
+                    # البحث عن جميع الصفقات النشطة لهذه العملة
                     active_trades = self.trade_executor.get_active_trades()
+                    trades_to_close = []
+                
                     for trade_id, trade in active_trades.items():
                         if trade['symbol'] == symbol and trade['status'] == 'open':
+                            trades_to_close.append(trade_id)
+                
+                    if trades_to_close:
+                        # إغلاق جميع الصفقات النشطة لهذه العملة
+                        success_count = 0
+                        error_messages = []
+                    
+                        for trade_id in trades_to_close:
                             success, message = self.trade_executor.close_trade(trade_id, reason)
                             if success:
-                                signal_data['processed'] = True
-                                signal_data['result'] = 'SUCCESS'
+                                success_count += 1
                             else:
-                                signal_data['result'] = 'FAILED'
-                            return success, message
-                    return False, f"لا توجد صفقة مفتوحة لـ {symbol}"
+                                error_messages.append(message)
+                    
+                        if success_count > 0:
+                            signal_data['processed'] = True
+                            signal_data['result'] = 'PARTIAL_SUCCESS'
+                            signal_data['closed_trades'] = success_count
+                            signal_data['errors'] = error_messages
+                            return True, f"تم إغلاق {success_count} صفقة - أخطاء: {error_messages}"
+                        else:
+                            signal_data['result'] = 'FAILED'
+                            signal_data['errors'] = error_messages
+                            return False, f"فشل إغلاق الصفقات: {error_messages}"
+                    else:
+                        signal_data['result'] = 'FAILED'
+                        return False, f"لا توجد صفقات مفتوحة لـ {symbol}"
                 else:
+                    signal_data['result'] = 'FAILED'
                     return False, "رمز العملة مطلوب للإغلاق"
-            
+        
             else:
+                signal_data['result'] = 'FAILED'
                 return False, f"نوع إشارة غير معروف: {signal_type}"
-                
+            
         except Exception as e:
             logger.error(f"❌ خطأ في معالجة الإشارة: {e}")
-            return False, f"خطأ في المعالجة: {str(e)}"
+            if 'signal_data' in locals():
+                signal_data['result'] = 'ERROR'
+                signal_data['error'] = str(e)
+            return False, f"خطأ في المعالجة: {str(e)}"    
     
     def _validate_signal(self, signal_data):
         """التحقق من صحة الإشارة - محدث"""
