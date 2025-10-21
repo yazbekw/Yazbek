@@ -228,10 +228,7 @@ class MultiLevelTradeExecutor:
                 if len(active_trades) >= TRADING_SETTINGS['max_simultaneous_trades']:
                     return False, "وصل الحد الأقصى للصفقات النشطة"
             
-                for trade_id, trade in active_trades.items():
-                    if trade['symbol'] == symbol:
-                        return False, f"توجد صفقة نشطة على {symbol}"
-        
+                
             # التحقق من الرصيد المتاح
             try:
                 balance_info = self.client.futures_account_balance()
