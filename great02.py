@@ -27,7 +27,7 @@ TRADING_SETTINGS = {
     'position_size': 10 * 20,  # 100 دولار حجم المركز
     'max_simultaneous_trades': 4,  # أقصى 2 صفقة في نفس الوقت
     'max_trades_per_symbol': 2,  # صفقة واحدة فقط لكل عملة
-    'min_balance_required': 8,  # أقل رصيد مطلوب
+    'min_balance_required': 4,  # أقل رصيد مطلوب
 }
 
 # مستويات جني الأرباح محدثة لتتوافق مع عتبة 50 نقطة
