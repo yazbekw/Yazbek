@@ -21,7 +21,15 @@ load_dotenv()
 
 # ========== الإعدادات الأساسية ==========
 TRADING_SETTINGS = {
-    'symbols': ["BNBUSDT", "ETHUSDT", "SOLUSDT"],
+    'symbols': ["BNBUSDT",
+                "ETHUSDT",
+                #"SOLUSDT",
+                #"XRPUSDT",
+                #"LTCUSDT",
+                #"ADAUSDT",
+                #"AVAXUSDT",
+                #"DOTUSDT",
+                "LINKUSDT"],
     'base_trade_amount': 8,  # 5 دولار
     'leverage': 30,  # 20x رافعة
     'position_size': 8 * 30,  # 100 دولار حجم المركز
@@ -33,15 +41,15 @@ TRADING_SETTINGS = {
 # مستويات جني الأرباح محدثة لتتوافق مع عتبة 50 نقطة
 TAKE_PROFIT_LEVELS = {
     'LEVEL_1': {  # إشارة متوسطة (50-65 نقطة)
-        'profit_target': 0.0030,  # 2.5 بالألف
+        'profit_target': 0.0025,  # 2.5 بالألف
         'allocation': 0.5,  # 40% من المركز
     },
     'LEVEL_2': {  # إشارة قوية (66-80 نقطة)
-        'profit_target': 0.0035,  # 3.0 بالألف
+        'profit_target': 0.0030,  # 3.0 بالألف
         'allocation': 0.75,  # 60% من المركز
     },
     'LEVEL_3': {  # إشارة قوية جداً (81-100 نقطة)
-        'profit_target': 0.0045,  # 3.5 بالألف
+        'profit_target': 0.0035,  # 3.5 بالألف
         'allocation': 0.99,  # 80% من المركز
     }
 }
