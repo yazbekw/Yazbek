@@ -21,13 +21,13 @@ load_dotenv()
 
 # ========== الإعدادات الأساسية ==========
 TRADING_SETTINGS = {
-    'symbols': ["BNBUSDT", "BTCUSDT", "ETHUSDT"],
+    'symbols': ["BNBUSDT", "ETHUSDT", "ETHUSDT"],
     'base_trade_amount': 10,  # 5 دولار
     'leverage': 20,  # 20x رافعة
     'position_size': 10 * 20,  # 100 دولار حجم المركز
-    'max_simultaneous_trades': 2,  # أقصى 2 صفقة في نفس الوقت
-    'max_trades_per_symbol': 1,  # صفقة واحدة فقط لكل عملة
-    'min_balance_required': 12,  # أقل رصيد مطلوب
+    'max_simultaneous_trades': 4,  # أقصى 2 صفقة في نفس الوقت
+    'max_trades_per_symbol': 2,  # صفقة واحدة فقط لكل عملة
+    'min_balance_required': 8,  # أقل رصيد مطلوب
 }
 
 # مستويات جني الأرباح محدثة لتتوافق مع عتبة 50 نقطة
