@@ -31,10 +31,15 @@ EXECUTOR_BOT_API_KEY = os.getenv("EXECUTOR_BOT_API_KEY", "")
 EXECUTE_TRADES = os.getenv("EXECUTE_TRADES", "false").lower() == "true"
 
 # إعدادات التداول
-SCAN_INTERVAL = 1200  # 20 دقيقة بين كل فحص (بالثواني)
+SCAN_INTERVAL = 1800  # 20 دقيقة بين كل فحص (بالثواني)
 HEARTBEAT_INTERVAL = 1800  # 30 دقيقة بين كل نبضة (بالثواني)
 EXECUTOR_HEARTBEAT_INTERVAL = 3600  # ⬅️ جديد: ساعة بين كل نبضة للمنفذ (بالثواني)
 CONFIDENCE_THRESHOLD = 50  # الحد الأدنى للنقاط لإرسال الإشعار (إشارات متوسطة وفوق)
+# إعدادات نظام التأكيد - إضافة جديدة
+PRIMARY_TIMEFRAME = '1h'           # الإطار الرئيسي
+CONFIRMATION_TIMEFRAME = '15m'      # إطار التأكيد
+CONFIRMATION_THRESHOLD = 40         # الحد الأدنى لنقاط التأكيد
+CONFIRMATION_BONUS = 10             # نقاط المكافأة للتأكيد
 
 # الأصول والأطر الزمنية
 SUPPORTED_COINS = {
@@ -1225,8 +1230,8 @@ executor_client = ExecutorBotClient(EXECUTOR_BOT_URL, EXECUTOR_BOT_API_KEY)
 
 # المهام الأساسية
 async def market_scanner_task():
-    """المهمة الرئيسية للمسح الضوئي"""
-    safe_log_info("بدء مهمة مسح السوق كل 20 دقيقة", "system", "scanner")
+    """المهمة الرئيسية للمسح الضوئي مع نظام التأكيد"""
+    safe_log_info("بدء مهمة مسح السوق كل 20 دقيقة مع نظام التأكيد", "system", "scanner")
     
     while True:
         try:
@@ -1239,40 +1244,48 @@ async def market_scanner_task():
             alerts_sent = 0
             signals_sent = 0
             
-            # مسح جميع العملات والأطر الزمنية
+            # مسح جميع العملات
             for coin_key, coin_data in SUPPORTED_COINS.items():
-                for timeframe in TIMEFRAMES:
-                    try:
-                        # جلب البيانات والتحليل
-                        data = await data_fetcher.get_coin_data(coin_data, timeframe)
-                        analysis = data['analysis']
+                try:
+                    # 🔄 نظام التأكيد الجديد
+                    confirmed_signal = await check_with_confirmation(coin_data)
+                    
+                    if confirmed_signal and confirmed_signal['alert_level']['send_alert']:
+                        # إرسال التنبيه
+                        success = await notifier.send_alert(
+                            coin_key, f"1h (مؤكد بـ {CONFIRMATION_TIMEFRAME})", confirmed_signal, 
+                            confirmed_signal['price'], 
+                            confirmed_signal['prices'],
+                            confirmed_signal['highs'],
+                            confirmed_signal['lows']
+                        )
                         
-                        # إرسال التنبيه إذا كانت الإشارة قوية
-                        if analysis["alert_level"]["send_alert"] and analysis["strongest_score"] >= CONFIDENCE_THRESHOLD:
-                            success = await notifier.send_alert(
-                                coin_key, timeframe, analysis, data['price'], 
-                                data['prices'], data['highs'], data['lows']
+                        if success:
+                            alerts_sent += 1
+                            
+                            # إرسال إشارة للبوت المنفذ
+                            signal_data = await prepare_trade_signal(
+                                coin_key, coin_data, f"1h (مؤكد بـ {CONFIRMATION_TIMEFRAME})", 
+                                {
+                                    'price': confirmed_signal['price'],
+                                    'prices': confirmed_signal['prices'],
+                                    'highs': confirmed_signal['highs'], 
+                                    'lows': confirmed_signal['lows']
+                                }, 
+                                confirmed_signal
                             )
-                            if success:
-                                alerts_sent += 1
-                                
-                                # إرسال إشارة للبوت المنفذ
-                                signal_data = await prepare_trade_signal(
-                                    coin_key, coin_data, timeframe, data, analysis
-                                )
-                                if signal_data:
-                                    sent = await executor_client.send_trade_signal(signal_data)
-                                    if sent:
-                                        signals_sent += 1
-                                
-                                await asyncio.sleep(3)  # فواصل بين الإشعارات
-                        
-                        await asyncio.sleep(1)  # فواصل بين الطلبات
-                        
-                    except Exception as e:
-                        safe_log_error(f"خطأ في معالجة {coin_key} ({timeframe}): {e}", 
-                                     coin_key, "scanner")
-                        continue
+                            if signal_data:
+                                sent = await executor_client.send_trade_signal(signal_data)
+                                if sent:
+                                    signals_sent += 1
+                            
+                            await asyncio.sleep(3)  # فواصل بين الإشعارات
+                    
+                    await asyncio.sleep(1)  # فواصل بين الطلبات
+                    
+                except Exception as e:
+                    safe_log_error(f"خطأ في معالجة {coin_key}: {e}", coin_key, "scanner")
+                    continue
             
             # تحديث إحصائيات النظام
             system_stats["total_scans"] += 1
@@ -1286,8 +1299,56 @@ async def market_scanner_task():
             
         except Exception as e:
             safe_log_error(f"خطأ في المهمة الرئيسية: {e}", "system", "scanner")
-            await asyncio.sleep(60)  # انتظار قصير عند الخطأ
+            await asyncio.sleep(60)
 
+
+async def check_with_confirmation(coin_data):
+    """فحص الإشارة مع التأكيد من إطار 15m"""
+    try:
+        # 1. الفحص في الإطار الرئيسي (1h)
+        primary_data = await data_fetcher.get_coin_data(coin_data, PRIMARY_TIMEFRAME)
+        primary_signal = primary_data['analysis']
+        
+        # إذا لم تكن إشارة قوية في 1h، توقف
+        if (not primary_signal['alert_level']['send_alert'] or 
+            primary_signal['strongest_score'] < CONFIDENCE_THRESHOLD):
+            return None
+        
+        # 2. الفحص الفوري في إطار التأكيد (15m)
+        confirmation_data = await data_fetcher.get_coin_data(coin_data, CONFIRMATION_TIMEFRAME)
+        confirmation_signal = confirmation_data['analysis']
+        
+        # 3. التحقق من التأكيد
+        if (primary_signal['strongest_signal'] == confirmation_signal['strongest_signal'] and
+            confirmation_signal['strongest_score'] >= CONFIRMATION_THRESHOLD):
+            
+            # 4. تعزيز قوة الإشارة
+            confirmed_score = min(100, primary_signal['strongest_score'] + CONFIRMATION_BONUS)
+            alert_level = get_alert_level(confirmed_score)
+            
+            safe_log_info(f"✅ إشارة مؤكدة لـ {coin_data['symbol']}: {primary_signal['strongest_score']} → {confirmed_score} نقطة", 
+                         coin_data['symbol'], "confirmation")
+            
+            return {
+                **primary_signal,
+                'strongest_score': confirmed_score,
+                'alert_level': alert_level,
+                'confirmed': True,
+                'confirmation_score': confirmation_signal['strongest_score'],
+                'price': primary_data['price'],
+                'prices': primary_data['prices'],
+                'highs': primary_data['highs'],
+                'lows': primary_data['lows']
+            }
+        else:
+            safe_log_info(f"❌ إشارة غير مؤكدة لـ {coin_data['symbol']}: {primary_signal['strongest_signal']} vs {confirmation_signal['strongest_signal']}", 
+                         coin_data['symbol'], "confirmation")
+            return None
+            
+    except Exception as e:
+        safe_log_error(f"خطأ في نظام التأكيد لـ {coin_data['symbol']}: {e}", coin_data['symbol'], "confirmation")
+        return None    
+        
 async def health_check_task():
     """مهمة الفحص الصحي"""
     while True:
