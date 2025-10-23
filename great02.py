@@ -30,12 +30,12 @@ TRADING_SETTINGS = {
                 #"AVAXUSDT",
                 "DOTUSDT",
                 "LINKUSDT"],
-    'base_trade_amount': 8,  # 5 دولار
-    'leverage': 30,  # 20x رافعة
-    'position_size': 8 * 30,  # 100 دولار حجم المركز
-    'max_simultaneous_trades': 4,  # أقصى 2 صفقة في نفس الوقت
+    'base_trade_amount': 4,  # 5 دولار
+    'leverage': 50,  # 20x رافعة
+    'position_size': 4 * 50,  # 100 دولار حجم المركز
+    'max_simultaneous_trades': 2,  # أقصى 2 صفقة في نفس الوقت
     'max_trades_per_symbol': 1,  # صفقة واحدة فقط لكل عملة
-    'min_balance_required': 4,  # أقل رصيد مطلوب
+    'min_balance_required': 2,  # أقل رصيد مطلوب
 }
 
 # مستويات جني الأرباح محدثة لتتوافق مع عتبة 50 نقطة
