@@ -99,10 +99,38 @@ class DynamicStopLoss:
         return true_range.rolling(self.atr_period).mean()
     
     def calculate_support_resistance(self, df):
-        df['atr'] = self.calculate_atr(df)
-        df['resistance'] = df['high'].rolling(20).max()
-        df['support'] = df['low'].rolling(20).min()
-        return df
+        """حساب مستويات الدعم والمقاومة مع معالجة الأخطاء"""
+        try:
+            # ✅ حساب ATR مع معالجة الأخطاء
+            df_with_atr = df.copy()
+            df_with_atr['atr'] = self.calculate_atr(df_with_atr)
+        
+            # ✅ إذا فشل حساب ATR، استخدام قيمة افتراضية
+            if df_with_atr['atr'].isna().all():
+                current_price = df_with_atr['close'].iloc[-1]
+                default_atr = current_price * 0.01  # 1% افتراضي
+                df_with_atr['atr'] = default_atr
+        
+            # حساب الدعم والمقاومة
+            df_with_atr['resistance'] = df_with_atr['high'].rolling(20, min_periods=1).max()
+            df_with_atr['support'] = df_with_atr['low'].rolling(20, min_periods=1).min()
+        
+            # ✅ ملء القيم NaN
+            df_with_atr['resistance'].fillna(method='bfill', inplace=True)
+            df_with_atr['support'].fillna(method='bfill', inplace=True)
+            df_with_atr['atr'].fillna(method='bfill', inplace=True)
+        
+            return df_with_atr
+        
+        except Exception as e:
+            logger.error(f"❌ خطأ في حساب الدعم/المقاومة: {e}")
+            # إرجاع DataFrame مع قيم افتراضية في حالة الخطأ
+            df_default = df.copy()
+            current_price = df['close'].iloc[-1]
+            df_default['atr'] = current_price * 0.01
+            df_default['resistance'] = current_price * 1.02
+            df_default['support'] = current_price * 0.98
+            return df_default
     
     def calculate_dynamic_stop_loss(self, symbol, entry_price, direction, df):
         try:
@@ -260,20 +288,31 @@ class CompleteTradeManager:
             active_positions = self.get_active_positions_from_binance()
             current_managed = set(self.managed_trades.keys())
             binance_symbols = {pos['symbol'] for pos in active_positions}
-            
+        
             # إضافة الصفقات الجديدة
             for position in active_positions:
                 if position['symbol'] not in current_managed:
                     logger.info(f"🔄 إضافة صفقة جديدة للمراقبة: {position['symbol']}")
-                    self.manage_new_trade(position)
-            
+                
+                    # ✅ إضافة تحقق قبل إدارة الصفقة
+                    df = self.get_price_data(position['symbol'])
+                    if df is not None and not df.empty:
+                        # ✅ حساب ATR أولاً قبل إدارة الصفقة
+                        df = self.stop_loss_manager.calculate_support_resistance(df)
+                        if 'atr' in df.columns and not df['atr'].isna().iloc[-1]:
+                            self.manage_new_trade(position)
+                        else:
+                            logger.warning(f"⚠️ لا يمكن إدارة {position['symbol']} - بيانات ATR غير متوفرة")
+                    else:
+                        logger.warning(f"⚠️ لا يمكن إدارة {position['symbol']} - بيانات السعر غير متوفرة")
+        
             # إزالة الصفقات المغلقة
             for symbol in list(current_managed):
                 if symbol not in binance_symbols:
                     logger.info(f"🔄 إزالة صفقة مغلقة: {symbol}")
                     if symbol in self.managed_trades:
                         del self.managed_trades[symbol]
-            
+        
             return len(active_positions)
         except Exception as e:
             logger.error(f"❌ خطأ في المزامنة مع Binance: {e}")
@@ -281,39 +320,65 @@ class CompleteTradeManager:
     
     def manage_new_trade(self, trade_data):
         symbol = trade_data['symbol']
-        
+    
         logger.info(f"🔄 بدء إدارة صفقة جديدة: {symbol}")
-        
+    
         df = self.get_price_data(symbol)
-        if df is None:
+        if df is None or df.empty:
+            logger.error(f"❌ لا يمكن إدارة {symbol} - بيانات السعر غير متوفرة")
             return False
+    
+        try:
+            # ✅ حساب الدعم والمقاومة و ATR أولاً
+            df = self.stop_loss_manager.calculate_support_resistance(df)
         
-        df = self.stop_loss_manager.calculate_support_resistance(df)
-        stop_loss = self.stop_loss_manager.calculate_dynamic_stop_loss(
-            symbol, trade_data['entry_price'], trade_data['direction'], df
-        )
+            # ✅ التحقق من وجود عمود ATR
+            if 'atr' not in df.columns or df['atr'].isna().iloc[-1]:
+                logger.warning(f"⚠️ ATR غير متوفر لـ {symbol} - استخدام القيم الافتراضية")
+                # استخدام قيم افتراضية إذا فشل حساب ATR
+                current_price = self.get_current_price(symbol)
+                if current_price:
+                    atr_default = current_price * 0.01  # 1% افتراضي
+                    df['atr'] = atr_default
         
-        take_profit_levels = self.take_profit_manager.calculate_dynamic_take_profit(
-            symbol, trade_data['entry_price'], trade_data['direction'], df
-        )
+            stop_loss = self.stop_loss_manager.calculate_dynamic_stop_loss(
+                symbol, trade_data['entry_price'], trade_data['direction'], df
+            )
         
-        total_quantity = trade_data['quantity']
-        for level, config in take_profit_levels.items():
-            config['quantity'] = total_quantity * config['allocation']
+            take_profit_levels = self.take_profit_manager.calculate_dynamic_take_profit(
+                symbol, trade_data['entry_price'], trade_data['direction'], df
+            )
         
-        self.managed_trades[symbol] = {
-            **trade_data,
-            'dynamic_stop_loss': stop_loss,
-            'take_profit_levels': take_profit_levels,
-            'closed_levels': [],
-            'last_update': datetime.now(damascus_tz),
-            'status': 'managed',
-            'management_start': datetime.now(damascus_tz)
-        }
+            # إذا فشل حساب جني الأرباح، استخدام القيم الافتراضية
+            if not take_profit_levels:
+                logger.warning(f"⚠️ استخدام جني الأرباح الافتراضي لـ {symbol}")
+                take_profit_levels = {
+                    'LEVEL_1': {'price': trade_data['entry_price'] * 1.0025, 'target_percent': 0.25, 'allocation': 0.4, 'quantity': None},
+                    'LEVEL_2': {'price': trade_data['entry_price'] * 1.0035, 'target_percent': 0.35, 'allocation': 0.3, 'quantity': None},
+                    'LEVEL_3': {'price': trade_data['entry_price'] * 1.0050, 'target_percent': 0.50, 'allocation': 0.3, 'quantity': None}
+                }
         
-        self.performance_stats['total_trades_managed'] += 1
-        self.send_management_start_notification(symbol)
-        return True
+            total_quantity = trade_data['quantity']
+            for level, config in take_profit_levels.items():
+                config['quantity'] = total_quantity * config['allocation']
+        
+            self.managed_trades[symbol] = {
+                **trade_data,
+                'dynamic_stop_loss': stop_loss,
+                'take_profit_levels': take_profit_levels,
+                'closed_levels': [],
+                'last_update': datetime.now(damascus_tz),
+                'status': 'managed',
+                'management_start': datetime.now(damascus_tz)
+            }
+        
+            self.performance_stats['total_trades_managed'] += 1
+            self.send_management_start_notification(symbol)
+            return True
+        
+        except Exception as e:
+            logger.error(f"❌ فشل إدارة الصفقة {symbol}: {e}")
+            return False
     
     def check_managed_trades(self):
         closed_trades = []
