@@ -30,9 +30,9 @@ TRADING_SETTINGS = {
                 #"AVAXUSDT",
                 "DOTUSDT",
                 "LINKUSDT"],
-    'base_trade_amount': 4,  # 5 دولار
+    'base_trade_amount': 3,  # 5 دولار
     'leverage': 50,  # 20x رافعة
-    'position_size': 4 * 50,  # 100 دولار حجم المركز
+    'position_size': 3 * 50,  # 100 دولار حجم المركز
     'max_simultaneous_trades': 1,  # أقصى 2 صفقة في نفس الوقت
     'max_trades_per_symbol': 1,  # صفقة واحدة فقط لكل عملة
     'min_balance_required': 2,  # أقل رصيد مطلوب
