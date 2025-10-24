@@ -1663,6 +1663,16 @@ async def test_telegram():
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+@app.get("/ping")
+async def ping():
+    """نقطة نهاية بسيطة لـ UptimeRobot"""
+    return {
+        "status": "active", 
+        "message": "البوت يعمل بشكل طبيعي",
+        "timestamp": get_syria_time().strftime('%H:%M %d/%m/%Y'),
+        "version": "3.0"
+    }
+
 @app.get("/send-heartbeat")
 async def send_heartbeat_manual():
     """إرسال نبضة يدوية"""
