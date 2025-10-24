@@ -539,31 +539,20 @@ class MultiLevelTradeExecutor:
             return False, f"خطأ في الإغلاق: {str(e)}"
     
     def get_active_trades(self):
-        """الحصول على الصفقات النشطة"""
+        """الحصول على الصفقات النشطة - بدون تتبع تلقائي"""
         active = {}
         for trade_id, trade in self.active_trades.items():
             if trade['status'] == 'open':
-                # إضافة السعر الحالي و PnL
+                # فقط إرجاع المعلومات بدون تتبع أو إغلاق تلقائي
                 current_price = self._get_current_price(trade['symbol'])
                 trade_info = trade.copy()
                 if current_price:
-                    entry_price = trade['entry_price']
-                    if trade['side'] == 'LONG':
-                        pnl_pct = (current_price - entry_price) / entry_price * 100
-                        pnl_usd = (current_price - entry_price) * trade['quantity']
-                    else:
-                        pnl_pct = (entry_price - current_price) / entry_price * 100
-                        pnl_usd = (entry_price - current_price) * trade['quantity']
-                    
                     trade_info['current_price'] = current_price
-                    trade_info['current_pnl_pct'] = pnl_pct
-                    trade_info['current_pnl_usd'] = pnl_usd
-                    
-                    # التحقق من تحقيق جني الربح
-                    if ((trade['side'] == 'LONG' and current_price >= trade['take_profit_price']) or
-                        (trade['side'] == 'SHORT' and current_price <= trade['take_profit_price'])):
-                        logger.info(f"🎯 تحقيق جني الربح لـ {trade['symbol']} - الإغلاق التلقائي")
-                        self.close_trade(trade_id, "تحقيق هدف جني الربح تلقائياً")
+                    # إزالة التحقق من جني الأرباح التلقائي
+                    # ⚠️ احذف هذا الجزء تماماً:
+                    # if ((trade['side'] == 'LONG' and current_price >= trade['take_profit_price']) or
+                    #     (trade['side'] == 'SHORT' and current_price <= trade['take_profit_price'])):
+                    #     self.close_trade(trade_id, "تحقيق هدف جني الربح تلقائياً")
                 active[trade_id] = trade_info
         return active
     
