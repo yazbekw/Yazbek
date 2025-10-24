@@ -1385,4 +1385,372 @@ async def check_with_confirmation(coin_data):
         safe_log_error(f"خطأ في نظام التأكيد لـ {coin_data['symbol']}: {e}", coin_data['symbol'], "confirmation")
         return None
 
-# [يتبع باقي الكود...]
+# =============================================================================
+# تهيئة الكائنات الرئيسية - إضافة قبل نقاط API
+# =============================================================================
+
+# تهيئة الكائنات الرئيسية
+notifier = TelegramNotifier(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+executor_client = ExecutorBotClient(EXECUTOR_BOT_URL, EXECUTOR_BOT_API_KEY) 
+data_fetcher = BinanceDataFetcher()
+
+# مهمة المسح الرئيسية
+async def market_scanner_task():
+    """المهمة الرئيسية لمسح السوق بشكل دوري"""
+    safe_log_info("بدء مهمة مسح السوق الدورية", "system", "scanner")
+    
+    while True:
+        try:
+            current_time = get_syria_time()
+            safe_log_info(f"بدء جولة المسح - {current_time.strftime('%H:%M %d/%m/%Y')}", "system", "scanner")
+            
+            # مسح جميع العملات
+            for coin_key, coin_data in SUPPORTED_COINS.items():
+                try:
+                    # استخدام نظام التأكيد الجديد
+                    confirmed_analysis = await check_with_confirmation(coin_data)
+                    
+                    if confirmed_analysis:
+                        # جلب البيانات الكاملة للإشعار
+                        primary_data = await data_fetcher.get_coin_data(coin_data, PRIMARY_TIMEFRAME)
+                        
+                        # إرسال إشعار التليجرام
+                        await notifier.send_alert(
+                            coin_key, PRIMARY_TIMEFRAME, confirmed_analysis,
+                            primary_data['price'], primary_data['prices'],
+                            primary_data['highs'], primary_data['lows']
+                        )
+                        
+                        # إرسال إشارة التنفيذ إذا كانت مفعلة
+                        if EXECUTE_TRADES and confirmed_analysis['strongest_score'] >= CONFIDENCE_THRESHOLD:
+                            signal_data = await prepare_trade_signal(
+                                coin_key, coin_data, PRIMARY_TIMEFRAME, 
+                                primary_data, confirmed_analysis
+                            )
+                            if signal_data:
+                                await executor_client.send_trade_signal(signal_data)
+                                
+                except Exception as e:
+                    safe_log_error(f"خطأ في مسح {coin_key}: {e}", coin_key, "scanner")
+            
+            system_stats["total_scans"] += 1
+            system_stats["last_scan_time"] = current_time.strftime('%H:%M %d/%m/%Y')
+            
+            safe_log_info(f"انتهت جولة المسح - العملات: {len(SUPPORTED_COINS)} - الإشارات: {system_stats['total_signals_sent']}", 
+                         "system", "scanner")
+            
+            await asyncio.sleep(SCAN_INTERVAL)
+            
+        except Exception as e:
+            safe_log_error(f"خطأ في مهمة المسح: {e}", "system", "scanner")
+            await asyncio.sleep(60)
+
+# =============================================================================
+# نهاية التهيئة - يليها نقاط API من الجزء الثاني
+# =============================================================================
+
+
+async def health_check_task():
+    """مهمة الفحص الصحي"""
+    while True:
+        try:
+            # فحص بسيط للذاكرة والأداء
+            current_time = time.time()
+            cache_size = len(data_fetcher.cache)
+            current_session = get_current_session()
+            
+            # فحص اتصال البوت المنفذ
+            executor_health = await executor_client.health_check()
+            
+            safe_log_info(f"الفحص الصحي - الكاش: {cache_size} - الجلسة: {current_session['name']} - الوزن: {current_session['weight']} - المنفذ: {'متصل' if executor_health else 'غير متصل'}", 
+                         "system", "health")
+            
+            await asyncio.sleep(300)  # فحص كل 5 دقائق
+            
+        except Exception as e:
+            safe_log_error(f"خطأ في الفحص الصحي: {e}", "system", "health")
+            await asyncio.sleep(60)
+
+async def heartbeat_task():
+    """مهمة إرسال النبضات الدورية"""
+    safe_log_info("بدء مهمة النبضات الدورية كل 30 دقيقة", "system", "heartbeat")
+    
+    while True:
+        try:
+            # انتظار الفاصل الزمني المحدد
+            await asyncio.sleep(HEARTBEAT_INTERVAL)
+            
+            # إرسال النبضة
+            success = await notifier.send_heartbeat()
+            
+            if success:
+                safe_log_info("تم إرسال النبضة بنجاح", "system", "heartbeat")
+            else:
+                safe_log_error("فشل إرسال النبضة", "system", "heartbeat")
+                
+        except Exception as e:
+            safe_log_error(f"خطأ في مهمة النبضات: {e}", "system", "heartbeat")
+            await asyncio.sleep(60)  # انتظار قصير عند الخطأ
+
+async def executor_heartbeat_task():
+    """مهمة إرسال النبضات الدورية للبوت المنفذ"""
+    safe_log_info("بدء مهمة النبضات الدورية للبوت المنفذ كل ساعة", "system", "executor_heartbeat")
+    
+    while True:
+        try:
+            # انتظار الفاصل الزمني المحدد
+            await asyncio.sleep(EXECUTOR_HEARTBEAT_INTERVAL)
+            
+            # إرسال النبضة
+            success = await executor_client.send_heartbeat()
+            
+            if success:
+                safe_log_info("✅ تم إرسال النبضة للبوت المنفذ بنجاح", "system", "executor_heartbeat")
+            else:
+                safe_log_error("❌ فشل إرسال النبضة للبوت المنفذ", "system", "executor_heartbeat")
+                
+        except Exception as e:
+            safe_log_error(f"❌ خطأ في مهمة نبضات المنفذ: {e}", "system", "executor_heartbeat")
+            await asyncio.sleep(300)  # انتظار 5 دقائق عند الخطأ
+
+# endpoints للـ API
+@app.get("/")
+async def root():
+    return {
+        "message": "ماسح القمم والقيعان للكريبتو",
+        "version": "2.2.0",
+        "supported_coins": list(SUPPORTED_COINS.keys()),
+        "timeframes": TIMEFRAMES,
+        "scan_interval": f"{SCAN_INTERVAL} ثانية",
+        "heartbeat_interval": f"{HEARTBEAT_INTERVAL} ثانية",
+        "executor_heartbeat_interval": f"{EXECUTOR_HEARTBEAT_INTERVAL} ثانية",
+        "confidence_threshold": CONFIDENCE_THRESHOLD,
+        "syria_time": get_syria_time().strftime('%H:%M %d/%m/%Y'),
+        "current_session": get_current_session()["name"],
+        "executor_enabled": EXECUTE_TRADES,
+        "executor_connected": system_stats["executor_connected"]
+    }
+
+@app.get("/health")
+async def health_check():
+    current_session = get_current_session()
+    executor_health = await executor_client.health_check()
+    
+    return {
+        "status": "نشط",
+        "syria_time": get_syria_time().strftime('%H:%M %d/%m/%Y'),
+        "current_session": current_session["name"],
+        "session_weight": current_session["weight"],
+        "cache_size": len(data_fetcher.cache),
+        "system_stats": system_stats,
+        "uptime": time.time() - system_stats["start_time"],
+        "executor_connected": executor_health,
+        "trade_execution_enabled": EXECUTE_TRADES
+    }
+
+@app.get("/scan/{coin}")
+async def scan_coin(coin: str, timeframe: str = "15m"):
+    if coin not in SUPPORTED_COINS:
+        raise HTTPException(404, "العملة غير مدعومة")
+    if timeframe not in TIMEFRAMES:
+        raise HTTPException(404, "الإطار الزمني غير مدعوم")
+    
+    coin_data = SUPPORTED_COINS[coin]
+    data = await data_fetcher.get_coin_data(coin_data, timeframe)
+    
+    return {
+        "coin": coin,
+        "timeframe": timeframe,
+        "price": data['price'],
+        "analysis": data['analysis'],
+        "syria_time": get_syria_time().strftime('%H:%M %d/%m/%Y'),
+        "current_session": get_current_session()["name"]
+    }
+
+@app.get("/session-info")
+async def get_session_info():
+    current_session = get_current_session()
+    return {
+        "syria_time": get_syria_time().strftime('%H:%M %d/%m/%Y'),
+        "current_hour": get_syria_time().hour,
+        "current_session": current_session,
+        "all_sessions": TRADING_SESSIONS
+    }
+
+@app.get("/system-stats")
+async def get_system_stats():
+    """الحصول على إحصائيات النظام"""
+    uptime_seconds = time.time() - system_stats["start_time"]
+    
+    # تنسيق مدة التشغيل
+    days = int(uptime_seconds // 86400)
+    hours = int((uptime_seconds % 86400) // 3600)
+    minutes = int((uptime_seconds % 3600) // 60)
+    
+    if days > 0:
+        uptime_str = f"{days} يوم, {hours} ساعة, {minutes} دقيقة"
+    elif hours > 0:
+        uptime_str = f"{hours} ساعة, {minutes} دقيقة"
+    else:
+        uptime_str = f"{minutes} دقيقة"
+    
+    return {
+        "system_stats": system_stats,
+        "uptime": uptime_str,
+        "uptime_seconds": uptime_seconds,
+        "current_time": get_syria_time().strftime('%H:%M %d/%m/%Y'),
+        "cache_size": len(data_fetcher.cache),
+        "supported_coins": len(SUPPORTED_COINS),
+        "timeframes": TIMEFRAMES,
+        "executor_connected": system_stats["executor_connected"],
+        "trade_execution_enabled": EXECUTE_TRADES
+    }
+
+@app.get("/test-telegram")
+async def test_telegram():
+    """اختبار إرسال رسالة تجريبية للتليجرام"""
+    try:
+        test_message = """
+🧪 *اختبار البوت - ماسح القمم والقيعان v2.2*
+
+✅ *الحالة:* البوت يعمل بشكل صحيح
+🕒 *الوقت:* {}
+🌍 *الجلسة:* {} {}
+⚡ *الإصدار:* 2.2.0
+
+📊 *العملات المدعومة:* {}
+⏰ *الأطر الزمنية:* {}
+
+🔧 *الإعدادات:*
+• عتبة الثقة: {} نقطة (إشارات متوسطة وفوق)
+• فاصل المسح: {} ثانية
+• فاصل النبضات: {} ثانية
+• فاصل نبضات المنفذ: {} ثانية
+• التوقيت: سوريا (GMT+3)
+• تنفيذ الصفقات: {}
+• اتصال المنفذ: {}
+
+🎯 *الوظيفة:* كشف القمم والقيعان تلقائياً وإرسال إشارات التنفيذ
+        """.format(
+            get_syria_time().strftime('%H:%M %d/%m/%Y'),
+            get_current_session()["emoji"],
+            get_current_session()["name"],
+            ", ".join(SUPPORTED_COINS.keys()),
+            ", ".join(TIMEFRAMES),
+            CONFIDENCE_THRESHOLD,
+            SCAN_INTERVAL,
+            HEARTBEAT_INTERVAL,
+            EXECUTOR_HEARTBEAT_INTERVAL,
+            "مفعل" if EXECUTE_TRADES else "معطل",
+            "متصل" if system_stats["executor_connected"] else "غير متصل"
+        )
+
+        async with httpx.AsyncClient() as client:
+            payload = {
+                'chat_id': TELEGRAM_CHAT_ID,
+                'text': test_message,
+                'parse_mode': 'Markdown'
+            }
+            
+            response = await client.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage", 
+                                       json=payload, timeout=10.0)
+            
+            if response.status_code == 200:
+                return {"status": "success", "message": "تم إرسال رسالة الاختبار بنجاح"}
+            else:
+                return {"status": "error", "code": response.status_code, "details": response.text}
+                
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.get("/send-heartbeat")
+async def send_heartbeat_manual():
+    """إرسال نبضة يدوية"""
+    try:
+        success = await notifier.send_heartbeat()
+        if success:
+            return {"status": "success", "message": "تم إرسال النبضة بنجاح"}
+        else:
+            return {"status": "error", "message": "فشل إرسال النبضة"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.get("/test-executor")
+async def test_executor_connection():
+    """اختبار الاتصال بالبوت المنفذ"""
+    try:
+        is_healthy = await executor_client.health_check()
+        system_stats["executor_connected"] = is_healthy
+        
+        return {
+            "status": "success" if is_healthy else "error",
+            "executor_connected": is_healthy,
+            "executor_url": EXECUTOR_BOT_URL,
+            "trade_execution_enabled": EXECUTE_TRADES,
+            "message": "البوت المنفذ متصل" if is_healthy else "البوت المنفذ غير متصل"
+        }
+    except Exception as e:
+        system_stats["executor_connected"] = False
+        return {"status": "error", "message": str(e)}
+
+@app.get("/test-executor-heartbeat")
+async def test_executor_heartbeat():
+    """اختبار إرسال نبضة يدوية للبوت المنفذ"""
+    try:
+        success = await executor_client.send_heartbeat()
+        if success:
+            return {
+                "status": "success", 
+                "message": "تم إرسال النبضة للبوت المنفذ بنجاح",
+                "executor_connected": system_stats["executor_connected"],
+                "total_heartbeats_sent": system_stats["total_heartbeats_sent"],
+                "last_executor_heartbeat": system_stats["last_executor_heartbeat"],
+                "timestamp": get_syria_time().strftime('%H:%M %d/%m/%Y')
+            }
+        else:
+            return {
+                "status": "error", 
+                "message": "فشل إرسال النبضة للبوت المنفذ",
+                "executor_connected": system_stats["executor_connected"],
+                "timestamp": get_syria_time().strftime('%H:%M %d/%m/%Y')
+            }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+# وقت بدء التشغيل
+start_time = time.time()
+
+@app.on_event("startup")
+async def startup_event():
+    safe_log_info("بدء تشغيل ماسح القمم والقيعان الإصدار 2.2", "system", "startup")
+    safe_log_info(f"العملات المدعومة: {list(SUPPORTED_COINS.keys())}", "system", "config")
+    safe_log_info(f"الأطر الزمنية: {TIMEFRAMES}", "system", "config")
+    safe_log_info(f"فاصل المسح: {SCAN_INTERVAL} ثانية", "system", "config")
+    safe_log_info(f"فاصل النبضات: {HEARTBEAT_INTERVAL} ثانية", "system", "config")
+    safe_log_info(f"فاصل نبضات المنفذ: {EXECUTOR_HEARTBEAT_INTERVAL} ثانية", "system", "config")
+    safe_log_info(f"حد الثقة: {CONFIDENCE_THRESHOLD} نقطة", "system", "config")
+    safe_log_info(f"التوقيت: سوريا (GMT+3)", "system", "config")
+    safe_log_info(f"تنفيذ الصفقات: {'مفعل' if EXECUTE_TRADES else 'معطل'}", "system", "config")
+    safe_log_info(f"رابط البوت المنفذ: {EXECUTOR_BOT_URL}", "system", "config")
+    
+    # فحص اتصال البوت المنفذ
+    executor_health = await executor_client.health_check()
+    safe_log_info(f"اتصال البوت المنفذ: {'متصل' if executor_health else 'غير متصل'}", "system", "config")
+    
+    # بدء المهام
+    asyncio.create_task(market_scanner_task())
+    asyncio.create_task(health_check_task())
+    asyncio.create_task(heartbeat_task())
+    asyncio.create_task(executor_heartbeat_task())  # ⬅️ جديد
+    
+    safe_log_info("✅ بدأت مهام المسح والفحص الصحي والنبضات", "system", "startup")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    safe_log_info("إيقاف ماسح السوق", "system", "shutdown")
+    await data_fetcher.close()
+    await executor_client.close()
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=PORT)
