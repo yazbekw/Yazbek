@@ -36,7 +36,7 @@ EXECUTE_TRADES = os.getenv("EXECUTE_TRADES", "false").lower() == "true"
 SCAN_INTERVAL = 1800  # 30 دقيقة بين كل فحص (بالثواني)
 HEARTBEAT_INTERVAL = 1800  # 30 دقيقة بين كل نبضة (بالثواني)
 EXECUTOR_HEARTBEAT_INTERVAL = 3600  # ساعة بين كل نبضة للمنفذ (بالثواني)
-CONFIDENCE_THRESHOLD = 50  # الحد الأدنى للنقاط لإرسال الإشعار
+CONFIDENCE_THRESHOLD = 60  # الحد الأدنى للنقاط لإرسال الإشعار
 
 # 🔧 نظام المؤشرات الجديد - قابل للتعديل
 ENABLE_BCMI = True  # تفعيل/إلغاء مؤشر BCMI
@@ -91,8 +91,8 @@ TRADING_SESSIONS = {
 ALERT_LEVELS = {
     "LOW": {"min": 0, "max": 40, "emoji": "⚪", "send_alert": False, "color": "gray"},
     "MEDIUM": {"min": 41, "max": 49, "emoji": "🟡", "send_alert": True, "color": "gold"},
-    "HIGH": {"min": 50, "max": 65, "emoji": "🟠", "send_alert": True, "color": "darkorange"},
-    "STRONG": {"min": 66, "max": 80, "emoji": "🔴", "send_alert": True, "color": "red"},
+    "HIGH": {"min": 60, "max": 70, "emoji": "🟠", "send_alert": True, "color": "darkorange"},
+    "STRONG": {"min": 71, "max": 80, "emoji": "🔴", "send_alert": True, "color": "red"},
     "EXTREME": {"min": 81, "max": 100, "emoji": "💥", "send_alert": True, "color": "darkred"}
 }
 
