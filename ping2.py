@@ -15,6 +15,7 @@ URLS = [
     "https://yazbek-2-482e.onrender.com", 
     "https://scanner-zwlt.onrender.com",
     "https://testnet-7t23.onrender.com",
+    "https://monitor-19ny.onrender.com",
     "https://trade-manager-j8ur.onrender.com",
     "https://trade-hbwj.onrender.com"
 ]
