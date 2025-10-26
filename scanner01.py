@@ -34,7 +34,7 @@ EXECUTE_TRADES = os.getenv("EXECUTE_TRADES", "false").lower() == "true"
 SCAN_INTERVAL = 1800  # 20 دقيقة بين كل فحص (بالثواني)
 HEARTBEAT_INTERVAL = 1800  # 30 دقيقة بين كل نبضة (بالثواني)
 EXECUTOR_HEARTBEAT_INTERVAL = 3600  # ⬅️ جديد: ساعة بين كل نبضة للمنفذ (بالثواني)
-CONFIDENCE_THRESHOLD = 50  # الحد الأدنى للنقاط لإرسال الإشعار (إشارات متوسطة وفوق)
+CONFIDENCE_THRESHOLD = 60  # الحد الأدنى للنقاط لإرسال الإشعار (إشارات متوسطة وفوق)
 # إعدادات نظام التأكيد - إضافة جديدة
 PRIMARY_TIMEFRAME = '1h'           # الإطار الرئيسي
 CONFIRMATION_TIMEFRAME = '15m'      # إطار التأكيد
@@ -51,8 +51,8 @@ SUPPORTED_COINS = {
     #'ltc': {'name': 'Litecoin', 'binance_symbol': 'LTCUSDT', 'symbol': 'LTC'},
     #'ada': {'name': 'Cardano', 'binance_symbol': 'ADAUSDT', 'symbol': 'ADA'},
     #'avax': {'name': 'Avalanche', 'binance_symbol': 'AVAXUSDT', 'symbol': 'AVAX'},
-    'dot': {'name': 'Polkadot', 'binance_symbol': 'DOTUSDT', 'symbol': 'DOT'},
-    'link': {'name': 'Chainlink', 'binance_symbol': 'LINKUSDT', 'symbol': 'LINK'},
+    #'dot': {'name': 'Polkadot', 'binance_symbol': 'DOTUSDT', 'symbol': 'DOT'},
+    #'link': {'name': 'Chainlink', 'binance_symbol': 'LINKUSDT', 'symbol': 'LINK'},
 }
 
 TIMEFRAMES = ['1h', '15m']
