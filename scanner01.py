@@ -69,10 +69,10 @@ TRADING_SESSIONS = {
 
 # أوزان المؤشرات المحدثة (من 100 نقطة) - توزيع منطقي بدون هدر
 INDICATOR_WEIGHTS = {
-    "MOMENTUM": 35,      # RSI + Stochastic + MACD
+    "MOMENTUM": 40,      # RSI + Stochastic + MACD
     "PRICE_ACTION": 25,  # أنماط الشموع + اختراق المتوسطات
     "KEY_LEVELS": 25,    # الدعم/المقاومة + فيبوناتشي
-    "VOLUME_CONFIRMATION": 15  # تحليل الحجم
+    "VOLUME_CONFIRMATION": 20  # تحليل الحجم
 }
 
 # مستويات التنبيه المحدثة
