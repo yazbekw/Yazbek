@@ -185,17 +185,38 @@ def get_alert_level(score: int) -> Dict[str, Any]:
             }
     return ALERT_LEVELS["LOW"]
 
+# استبدال دالة filter_conflicting_signals الحالية بهذه النسخة المصححة
 def filter_conflicting_signals(analysis: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """تصفية الإشارات المتضاربة"""
+    """تصفية الإشارات المتضاربة - النسخة المصححة"""
     top_score = analysis["top_score"]
     bottom_score = analysis["bottom_score"]
+    strongest_signal = analysis["strongest_signal"]
+    strongest_score = analysis["strongest_score"]
     
-    # حساب الفرق بين القمة والقاع
+    # إذا كانت هناك إشارة واحدة قوية بوضوح (فوق عتبة الثقة)، نتحقق من التضارب
+    if strongest_score >= CONFIDENCE_THRESHOLD:
+        # حساب الفرق بين الإشارة القوية والإشارة المضادة
+        if strongest_signal == "top":
+            opposing_score = bottom_score
+        else:
+            opposing_score = top_score
+            
+        score_gap = strongest_score - opposing_score
+        
+        # إذا كان الفرق كافياً (15 نقطة على الأقل)، نعيد الإشارة القوية
+        if score_gap >= MIN_SIGNAL_GAP:
+            return analysis
+        else:
+            safe_log_info(f"🚫 تجاهل إشارة متضاربة - {strongest_signal}: {strongest_score}, مضادة: {opposing_score}, الفرق: {score_gap}", 
+                         "system", "conflict_filter")
+            system_stats["conflicting_signals_filtered"] += 1
+            return None
+    
+    # إذا لم تكن هناك إشارة قوية بوضوح، نستخدم المنطق القديم
     score_gap = abs(top_score - bottom_score)
     
-    # إذا كانت الإشارات متقاربة جداً، نتجاهل كليهما
     if score_gap < MIN_SIGNAL_GAP:
-        safe_log_info(f"تجاهل إشارات متضاربة - قمة: {top_score}, قاع: {bottom_score}, الفرق: {score_gap}", 
+        safe_log_info(f"🚫 تجاهل إشارات متضاربة - قمة: {top_score}, قاع: {bottom_score}, الفرق: {score_gap}", 
                      "system", "conflict_filter")
         system_stats["conflicting_signals_filtered"] += 1
         return None
@@ -205,7 +226,7 @@ def filter_conflicting_signals(analysis: Dict[str, Any]) -> Optional[Dict[str, A
         return {**analysis, "strongest_signal": "top", "strongest_score": top_score}
     else:
         return {**analysis, "strongest_signal": "bottom", "strongest_score": bottom_score}
-
+        
 def get_market_bias(prices: List[float]) -> str:
     """تحديد الاتجاه العام للسوق"""
     if len(prices) < 20:
