@@ -1798,8 +1798,7 @@ async def test_executor_heartbeat():
             }
     except Exception as e:
         return {"status": "error", "message": str(e)}
-# التهيئة وتشغيل التطبيق
-@app.on_event("startup")
+        
 # التهيئة العالمية
 data_fetcher = BinanceDataFetcher()
 notifier = TelegramNotifier(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
