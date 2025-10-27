@@ -34,18 +34,18 @@ EXECUTE_TRADES = os.getenv("EXECUTE_TRADES", "false").lower() == "true"
 SCAN_INTERVAL = 1800  # 30 دقيقة بين كل فحص (بالثواني)
 HEARTBEAT_INTERVAL = 1800  # 30 دقيقة بين كل نبضة (بالثواني)
 EXECUTOR_HEARTBEAT_INTERVAL = 3600  # ساعة بين كل نبضة للمنفذ (بالثواني)
-CONFIDENCE_THRESHOLD = 55  # ⬅️ تحديث: خفض من 60 إلى 55 (إشارات أقوى)
+CONFIDENCE_THRESHOLD = 50  # ⬅️ تحديث: خفض من 60 إلى 55 (إشارات أقوى)
 
 # إعدادات نظام التأكيد المحدثة
 PRIMARY_TIMEFRAME = '1h'
 CONFIRMATION_TIMEFRAME = '15m'
-CONFIRMATION_THRESHOLD = 35  # ⬅️ تحديث: خفض من 40 إلى 35
-CONFIRMATION_BONUS = 12      # ⬅️ تحديث: زيادة من 10 إلى 12
-MIN_CONFIRMATION_GAP = 5     # ⬅️ جديد: فرق نقاط minimum للتأكيد
+CONFIRMATION_THRESHOLD = 30  # ⬅️ تحديث: خفض من 40 إلى 35
+CONFIRMATION_BONUS = 10      # ⬅️ تحديث: زيادة من 10 إلى 12
+MIN_CONFIRMATION_GAP = 3     # ⬅️ جديد: فرق نقاط minimum للتأكيد
 
 # إعدادات تصفية الإشارات المتضاربة المحدثة
-MIN_SIGNAL_GAP = 12          # ⬅️ تحديث: زيادة من 10 إلى 12
-CONFLICTING_SIGNAL_PENALTY = 20
+MIN_SIGNAL_GAP = 10          # ⬅️ تحديث: زيادة من 10 إلى 12
+CONFLICTING_SIGNAL_PENALTY = 15
 
 # ⬅️ جديد: إعدادات التحسينات الطفيفة
 ENHANCEMENT_SETTINGS = {
