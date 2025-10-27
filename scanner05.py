@@ -31,10 +31,10 @@ EXECUTOR_BOT_API_KEY = os.getenv("EXECUTOR_BOT_API_KEY", "")
 EXECUTE_TRADES = os.getenv("EXECUTE_TRADES", "false").lower() == "true"
 
 # إعدادات التداول المحسنة
-SCAN_INTERVAL = 1800  # 30 دقيقة بين كل فحص
+SCAN_INTERVAL = 900  # 30 دقيقة بين كل فحص
 HEARTBEAT_INTERVAL = 1800  # 30 دقيقة بين كل نبضة
 EXECUTOR_HEARTBEAT_INTERVAL = 3600  # ساعة بين كل نبضة للمنفذ
-CONFIDENCE_THRESHOLD = 50  # عتبة الثقة الأساسية
+CONFIDENCE_THRESHOLD = 35  # عتبة الثقة الأساسية
 
 # =============================================================================
 # النظام المحسن للأوزان وتقليل التضارب
@@ -60,9 +60,9 @@ ENHANCED_INDICATOR_WEIGHTS = {
     "KEY_LEVELS": {
         "weight": 25,
         "components": {
-            "support_resistance": 15, # إعادة توازن
-            "fibonacci": 7,          # تقليل فيبوناتشي
-            "pivot_points": 3        # جديد: نقاط المحور
+            "support_resistance": 10, # إعادة توازن
+            "fibonacci": 9,          # تقليل فيبوناتشي
+            "pivot_points": 6        # جديد: نقاط المحور
         }
     },
     "VOLUME_CONFIRMATION": {
@@ -84,7 +84,7 @@ ENHANCED_INDICATOR_WEIGHTS = {
 # إعدادات إدارة التضارب المحسنة
 CONFLICT_MANAGEMENT = {
     "ENABLE_ENHANCED_FILTERING": True,
-    "MAX_CONFLICT_PENALTY": 12,
+    "MAX_CONFLICT_PENALTY": 10,
     "CORE_CONFLICT_THRESHOLD": 2,
     "TREND_ALIGNMENT_BONUS": True,
     "REQUIRE_VOLUME_CONFIRMATION": True,
@@ -106,8 +106,8 @@ CONFLICTING_SIGNAL_PENALTY = 15
 # إعدادات التحسينات الطفيفة المحسنة
 ENHANCEMENT_SETTINGS = {
     'ENABLE_QUICK_ENHANCE': True,
-    'MIN_STRENGTH_FOR_ENHANCE': 40,
-    'MAX_ENHANCEMENT_BONUS': 8,
+    'MIN_STRENGTH_FOR_ENHANCE': 35,
+    'MAX_ENHANCEMENT_BONUS': 10,
     'ENABLE_TREND_ALIGNMENT': True
 }
 
