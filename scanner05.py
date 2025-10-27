@@ -17,7 +17,7 @@ from logging.handlers import RotatingFileHandler
 import pytz
 
 # =============================================================================
-# الإعدادات الرئيسية المحدثة بشروط مخففة
+# الإعدادات الرئيسية المحسنة - تقليل التضارب وتحسين الدقة
 # =============================================================================
 
 # إعدادات التطبيق
@@ -30,42 +30,91 @@ EXECUTOR_BOT_URL = os.getenv("EXECUTOR_BOT_URL", "https://your-executor-bot.onre
 EXECUTOR_BOT_API_KEY = os.getenv("EXECUTOR_BOT_API_KEY", "")
 EXECUTE_TRADES = os.getenv("EXECUTE_TRADES", "false").lower() == "true"
 
-# إعدادات التداول المحدثة بشروط مخففة
+# إعدادات التداول المحسنة
 SCAN_INTERVAL = 1800  # 30 دقيقة بين كل فحص
 HEARTBEAT_INTERVAL = 1800  # 30 دقيقة بين كل نبضة
 EXECUTOR_HEARTBEAT_INTERVAL = 3600  # ساعة بين كل نبضة للمنفذ
-CONFIDENCE_THRESHOLD = 50  # ⬅️ تخفيف: خفض من 55 إلى 50 (إشارات أكثر)
+CONFIDENCE_THRESHOLD = 50  # عتبة الثقة الأساسية
 
-# إعدادات نظام التأكيد المحدثة بشروط مخففة
+# =============================================================================
+# النظام المحسن للأوزان وتقليل التضارب
+# =============================================================================
+
+ENHANCED_INDICATOR_WEIGHTS = {
+    "MOMENTUM": {
+        "weight": 35,
+        "components": {
+            "rsi": 12,           # تقليل تأثير RSI المنفرد
+            "stochastic": 10,    # تقليل Stochastic  
+            "macd": 13,          # زيادة وزن MACD الأكثر استقراراً
+        }
+    },
+    "PRICE_ACTION": {
+        "weight": 30,
+        "components": {
+            "candle_patterns": 15,  # زيادة وزن أنماط الشموع
+            "moving_averages": 10,  # زيادة أهمية المتوسطات
+            "trend_strength": 5     # جديد: قوة الاتجاه
+        }
+    },
+    "KEY_LEVELS": {
+        "weight": 25,
+        "components": {
+            "support_resistance": 15, # إعادة توازن
+            "fibonacci": 7,          # تقليل فيبوناتشي
+            "pivot_points": 3        # جديد: نقاط المحور
+        }
+    },
+    "VOLUME_CONFIRMATION": {
+        "weight": 25,
+        "components": {
+            "volume_trend": 15,      # زيادة وزن اتجاه الحجم
+            "volume_spike": 10       # جديد: قمم الحجم
+        }
+    },
+    "TREND_ALIGNMENT": {             # قسم جديد كلياً
+        "weight": 15,
+        "components": {
+            "multi_timeframe": 8,    # محاذاة الإطارات الزمنية
+            "market_structure": 7    # هيكل السوق العام
+        }
+    }
+}
+
+# إعدادات إدارة التضارب المحسنة
+CONFLICT_MANAGEMENT = {
+    "ENABLE_ENHANCED_FILTERING": True,
+    "MAX_CONFLICT_PENALTY": 12,
+    "CORE_CONFLICT_THRESHOLD": 2,
+    "TREND_ALIGNMENT_BONUS": True,
+    "REQUIRE_VOLUME_CONFIRMATION": True,
+    "MIN_CONSISTENCY_SCORE": 6,
+    "CONFLICT_RESOLUTION_STRATEGY": "enhanced"  # 'basic' or 'enhanced'
+}
+
+# إعدادات نظام التأكيد المحسن
 PRIMARY_TIMEFRAME = '1h'
 CONFIRMATION_TIMEFRAME = '15m'
-CONFIRMATION_THRESHOLD = 30  # ⬅️ تخفيف: خفض من 35 إلى 30
-CONFIRMATION_BONUS = 10      # ⬅️ تخفيف: خفض من 12 إلى 10
-MIN_CONFIRMATION_GAP = 3     # ⬅️ تخفيف: خفض من 5 إلى 3
+CONFIRMATION_THRESHOLD = 30
+CONFIRMATION_BONUS = 10
+MIN_CONFIRMATION_GAP = 3
 
-# إعدادات تصفية الإشارات المتضاربة المحدثة بشروط مخففة
-MIN_SIGNAL_GAP = 8           # ⬅️ تخفيف: خفض من 12 إلى 8
-CONFLICTING_SIGNAL_PENALTY = 15  # ⬅️ تخفيف: خفض من 20 إلى 15
+# إعدادات تصفية الإشارات المتضاربة المحسنة
+MIN_SIGNAL_GAP = 8
+CONFLICTING_SIGNAL_PENALTY = 15
 
-# إعدادات التحسينات الطفيفة المحدثة
+# إعدادات التحسينات الطفيفة المحسنة
 ENHANCEMENT_SETTINGS = {
     'ENABLE_QUICK_ENHANCE': True,
-    'MIN_STRENGTH_FOR_ENHANCE': 40,  # ⬅️ تخفيف: خفض من 45 إلى 40
-    'MAX_ENHANCEMENT_BONUS': 8       # ⬅️ تخفيف: خفض من 10 إلى 8
+    'MIN_STRENGTH_FOR_ENHANCE': 40,
+    'MAX_ENHANCEMENT_BONUS': 8,
+    'ENABLE_TREND_ALIGNMENT': True
 }
 
 # الأصول والأطر الزمنية
 SUPPORTED_COINS = {
-    #'btc': {'name': 'Bitcoin', 'binance_symbol': 'BTCUSDT', 'symbol': 'BTC'},
     'eth': {'name': 'Ethereum', 'binance_symbol': 'ETHUSDT', 'symbol': 'ETH'},
     'bnb': {'name': 'Binance Coin', 'binance_symbol': 'BNBUSDT', 'symbol': 'BNB'},
-    #'sol': {'name': 'Solana', 'binance_symbol': 'SOLUSDT', 'symbol': 'SOL'},
-    #'xrp': {'name': 'Ripple', 'binance_symbol': 'XRPUSDT', 'symbol': 'XRP'},
-    #'ltc': {'name': 'Litecoin', 'binance_symbol': 'LTCUSDT', 'symbol': 'LTC'},
-    #'ada': {'name': 'Cardano', 'binance_symbol': 'ADAUSDT', 'symbol': 'ADA'},
-    #'avax': {'name': 'Avalanche', 'binance_symbol': 'AVAXUSDT', 'symbol': 'AVAX'},
-    #'dot': {'name': 'Polkadot', 'binance_symbol': 'DOTUSDT', 'symbol': 'DOT'},
-    #'link': {'name': 'Chainlink', 'binance_symbol': 'LINKUSDT', 'symbol': 'LINK'},
 }
 
 TIMEFRAMES = ['1h', '15m']
@@ -80,18 +129,10 @@ TRADING_SESSIONS = {
     "american": {"start": 16, "end": 24, "weight": 0.8, "name": "أمريكية", "emoji": "🌎"}
 }
 
-# أوزان المؤشرات المحدثة (من 100 نقطة)
-INDICATOR_WEIGHTS = {
-    "MOMENTUM": 40,
-    "PRICE_ACTION": 25,
-    "KEY_LEVELS": 25,
-    "VOLUME_CONFIRMATION": 20
-}
-
-# مستويات التنبيه المحدثة بشروط مخففة
+# مستويات التنبيه المحسنة
 ALERT_LEVELS = {
-    "LOW": {"min": 0, "max": 35, "emoji": "⚪", "send_alert": False, "color": "gray"},  # ⬅️ توسيع النطاق
-    "MEDIUM": {"min": 36, "max": 49, "emoji": "🟡", "send_alert": True, "color": "gold"},  # ⬅️ تخفيف: إرسال تنبيهات من 36 نقطة
+    "LOW": {"min": 0, "max": 35, "emoji": "⚪", "send_alert": False, "color": "gray"},
+    "MEDIUM": {"min": 36, "max": 49, "emoji": "🟡", "send_alert": True, "color": "gold"},
     "HIGH": {"min": 50, "max": 65, "emoji": "🟠", "send_alert": True, "color": "darkorange"},
     "STRONG": {"min": 66, "max": 80, "emoji": "🔴", "send_alert": True, "color": "red"},
     "EXTREME": {"min": 81, "max": 100, "emoji": "💥", "send_alert": True, "color": "darkred"}
@@ -105,7 +146,7 @@ COLORS = {
 }
 
 # =============================================================================
-# نهاية الإعدادات الرئيسية
+# نهاية الإعدادات الرئيسية المحسنة
 # =============================================================================
 
 # إعداد التسجيل
@@ -132,7 +173,7 @@ logger.propagate = False
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("asyncio").setLevel(logging.WARNING)
 
-app = FastAPI(title="Crypto Top/Bottom Scanner", version="2.5.0")  # ⬅️ تحديث الإصدار
+app = FastAPI(title="Crypto Top/Bottom Scanner", version="3.0.0")  # تحديث الإصدار
 
 # إحصائيات النظام المحدثة
 system_stats = {
@@ -148,7 +189,9 @@ system_stats = {
     "conflicting_signals_filtered": 0,
     "enhanced_signals_sent": 0,
     "confirmation_bonus_applied": 0,
-    "relaxed_signals_sent": 0  # ⬅️ جديد: الإشارات المرسلة بفضل التخفيف
+    "relaxed_signals_sent": 0,
+    "trend_alignment_applied": 0,  # جديد
+    "conflict_penalties_applied": 0  # جديد
 }
 
 def safe_log_info(message: str, coin: str = "system", source: str = "app"):
@@ -196,130 +239,15 @@ def get_alert_level(score: int) -> Dict[str, Any]:
             }
     return ALERT_LEVELS["LOW"]
 
-# ⬅️ تحديث: نظام التأكيد المخفف
-async def relaxed_confirmation_check(coin_data):
-    """نسخة مخففة من نظام التأكيد"""
-    try:
-        # الفحص في الإطار الرئيسي
-        primary_data = await data_fetcher.get_coin_data(coin_data, PRIMARY_TIMEFRAME)
-        primary_signal = primary_data['analysis']
-        
-        # ⬅️ تخفيف: اشتراط إشارة أقل قوة في الإطار الرئيسي
-        if (primary_signal['strongest_score'] < CONFIDENCE_THRESHOLD - 15 or  # تخفيف من 10 إلى 15
-            not primary_signal['alert_level']['send_alert']):
-            return None
-        
-        # الفحص في إطار التأكيد
-        confirmation_data = await data_fetcher.get_coin_data(coin_data, CONFIRMATION_TIMEFRAME)
-        confirmation_signal = confirmation_data['analysis']
-        
-        # ⬅️ تخفيف: اشتراطات أقل صرامة للتأكيد
-        confirmation_conditions = (
-            primary_signal['strongest_signal'] == confirmation_signal['strongest_signal'] and
-            confirmation_signal['strongest_score'] >= CONFIRMATION_THRESHOLD and
-            abs(primary_signal['strongest_score'] - confirmation_signal['strongest_score']) >= MIN_CONFIRMATION_GAP
-        )
-        
-        if confirmation_conditions:
-            # حساب النقاط المحسنة
-            base_bonus = CONFIRMATION_BONUS
-            strength_bonus = min(8, confirmation_signal['strongest_score'] // 12)  # ⬅️ تخفيف: تقسيم على 12 بدلاً من 10
-            total_bonus = base_bonus + strength_bonus
-            
-            confirmed_score = min(95, primary_signal['strongest_score'] + total_bonus)
-            
-            safe_log_info(f"✅ إشارة مؤكدة مخففة لـ {coin_data['symbol']}: {primary_signal['strongest_score']} → {confirmed_score} نقطة (bonus: {total_bonus})", 
-                         coin_data['symbol'], "relaxed_confirmation")
-            
-            system_stats["confirmation_bonus_applied"] += 1
-            
-            return {
-                **primary_signal,
-                'strongest_score': confirmed_score,
-                'alert_level': get_alert_level(confirmed_score),
-                'confirmed': True,
-                'confirmation_score': confirmation_signal['strongest_score'],
-                'confirmation_bonus': total_bonus,
-                'price': primary_data['price'],
-                'prices': primary_data['prices'],
-                'highs': primary_data['highs'],
-                'lows': primary_data['lows'],
-                '_relaxed': True  # ⬅️ جديد: علامة أن الإشارة مرسلة بفضل التخفيف
-            }
-        
-        return None
-            
-    except Exception as e:
-        safe_log_error(f"خطأ في نظام التأكيد المخفف لـ {coin_data['symbol']}: {e}", coin_data['symbol'], "relaxed_confirmation")
-        return None
-
-def relaxed_conflict_filter(analysis: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """تصفية مخففة للإشارات المتضاربة"""
-    top_score = analysis["top_score"]
-    bottom_score = analysis["bottom_score"]
-    
-    # ⬅️ تخفيف: تقليل الفرق المطلوب بين الإشارات
-    score_gap = abs(top_score - bottom_score)
-    
-    if score_gap < MIN_SIGNAL_GAP:
-        # ⬅️ تخفيف: بدلاً من التصفية الكاملة، نخفض قوة الإشارة الأضعف
-        if top_score > bottom_score:
-            adjusted_bottom = max(0, bottom_score - 8)  # ⬅️ تخفيف العقوبة
-            safe_log_info(f"⚠️  تخفيف إشارة متضاربة - قمة: {top_score}, قاع: {adjusted_bottom}, الفرق: {score_gap}", 
-                         "system", "relaxed_conflict_filter")
-            return {**analysis, "bottom_score": adjusted_bottom, "strongest_signal": "top", "strongest_score": top_score, "_relaxed": True}
-        else:
-            adjusted_top = max(0, top_score - 8)  # ⬅️ تخفيف العقوبة
-            safe_log_info(f"⚠️  تخفيف إشارة متضاربة - قمة: {adjusted_top}, قاع: {bottom_score}, الفرق: {score_gap}", 
-                         "system", "relaxed_conflict_filter")
-            return {**analysis, "top_score": adjusted_top, "strongest_signal": "bottom", "strongest_score": bottom_score, "_relaxed": True}
-    
-    # ⬅️ تخفيف: تعزيز طفيف للإشارة الأقوى
-    if top_score > bottom_score:
-        enhanced_top = min(100, top_score + 2)  # ⬅️ تخفيف التعزيز
-        return {**analysis, "strongest_signal": "top", "strongest_score": enhanced_top}
-    else:
-        enhanced_bottom = min(100, bottom_score + 2)  # ⬅️ تخفيف التعزيز
-        return {**analysis, "strongest_signal": "bottom", "strongest_score": enhanced_bottom}
-
-def get_market_bias(prices: List[float]) -> str:
-    """تحديد الاتجاه العام للسوق"""
-    if len(prices) < 20:
-        return "neutral"
-    
-    # حساب الاتجاه قصير وطويل المدى
-    short_trend = prices[-1] - prices[-5]
-    long_trend = prices[-1] - prices[-20]
-    
-    if short_trend > 0 and long_trend > 0:
-        return "bullish"
-    elif short_trend < 0 and long_trend < 0:
-        return "bearish"
-    else:
-        return "neutral"
-
-def apply_market_bias(analysis: Dict[str, Any], market_bias: str) -> Dict[str, Any]:
-    """تطبيق تحيز السوق على النتائج"""
-    if market_bias == "bullish":
-        # ⬅️ تخفيف: تقليل تأثير تحيز السوق
-        analysis["top_score"] = max(0, analysis["top_score"] - 5)  # ⬅️ خفض من 10 إلى 5
-    elif market_bias == "bearish":
-        analysis["bottom_score"] = max(0, analysis["bottom_score"] - 5)  # ⬅️ خفض من 10 إلى 5
-    
-    # إعادة حساب الإشارة الأقوى
-    if analysis["top_score"] > analysis["bottom_score"]:
-        analysis["strongest_signal"] = "top"
-        analysis["strongest_score"] = analysis["top_score"]
-    else:
-        analysis["strongest_signal"] = "bottom"
-        analysis["strongest_score"] = analysis["bottom_score"]
-    
-    analysis["alert_level"] = get_alert_level(analysis["strongest_score"])
-    
-    return analysis
-
 class AdvancedMarketAnalyzer:
-    """محلل متقدم للقمم والقيعان - النسخة المخففة"""
+    """محلل متقدم للقمم والقيعان - النسخة المحسنة"""
+    
+    def __init__(self):
+        self.conflict_stats = {
+            "total_conflicts_detected": 0,
+            "conflicts_resolved": 0,
+            "signals_filtered": 0
+        }
     
     @staticmethod
     def calculate_rsi(prices: List[float], period: int = 14) -> float:
@@ -424,25 +352,22 @@ class AdvancedMarketAnalyzer:
         current_upper_wick = current_high - max(current_close, prev_close)
         current_lower_wick = min(current_close, prev_close) - current_low
         
-        # ⬅️ تخفيف: شروط أقل صرامة لأنماط الشموع
-        is_hammer = (current_lower_wick > 1.8 * current_body and  # ⬅️ تخفيف من 2 إلى 1.8
-                    current_upper_wick < current_body * 0.4 and   # ⬅️ تخفيف من 0.3 إلى 0.4
+        is_hammer = (current_lower_wick > 1.8 * current_body and
+                    current_upper_wick < current_body * 0.4 and
                     current_close > prev_close)
         
         is_shooting_star = (current_upper_wick > 1.8 * current_body and 
                            current_lower_wick < current_body * 0.4 and
                            current_close < prev_close)
         
-        # نمط الابتلاع (شروط مخففة)
         is_bullish_engulfing = (prev_close < prev2_close and current_close > prev_close and abs(current_close - prev_close) > current_body * 0.5)
         is_bearish_engulfing = (prev_close > prev2_close and current_close < prev_close and abs(current_close - prev_close) > current_body * 0.5)
         
-        # نمط دوجي (شروط مخففة)
         body_ratio = current_body / (current_high - current_low) if (current_high - current_low) > 0 else 1
-        is_doji = body_ratio < 0.15  # ⬅️ تخفيف من 0.1 إلى 0.15
+        is_doji = body_ratio < 0.15
         
         if is_hammer:
-            return {"pattern": "hammer", "strength": 10, "description": "🔨 مطرقة - إشارة قاع", "direction": "bottom"}  # ⬅️ تخفيف القوة
+            return {"pattern": "hammer", "strength": 10, "description": "🔨 مطرقة - إشارة قاع", "direction": "bottom"}
         elif is_shooting_star:
             return {"pattern": "shooting_star", "strength": 10, "description": "💫 نجم ساقط - إشارة قمة", "direction": "top"}
         elif is_bullish_engulfing:
@@ -471,15 +396,14 @@ class AdvancedMarketAnalyzer:
         direction = "none"
         closest_distance = min(distance_to_support, distance_to_resistance)
         
-        # ⬅️ تخفيف: شروط أقل صرامة للدعم والمقاومة
-        if distance_to_support < 0.015:  # ⬅️ تخفيف من 0.01 إلى 0.015
-            strength = 10  # ⬅️ تخفيف من 12 إلى 10
+        if distance_to_support < 0.015:
+            strength = 10
             direction = "bottom"
-        elif distance_to_support < 0.025:  # ⬅️ تخفيف من 0.02 إلى 0.025
-            strength = 6   # ⬅️ تخفيف من 8 إلى 6
+        elif distance_to_support < 0.025:
+            strength = 6
             direction = "bottom"
-        elif distance_to_support < 0.035:  # ⬅️ تخفيف من 0.03 إلى 0.035
-            strength = 3   # ⬅️ تخفيف من 4 إلى 3
+        elif distance_to_support < 0.035:
+            strength = 3
             direction = "bottom"
         elif distance_to_resistance < 0.015:
             strength = 10
@@ -500,51 +424,78 @@ class AdvancedMarketAnalyzer:
             "distance_percent": closest_distance
         }
 
-    def relaxed_volume_analysis(self, volumes: List[float], price_trend: str, signal_type: str) -> Dict[str, Any]:
-        """تحليل حجم مخفف"""
+    def calculate_pivot_points(self, high: float, low: float, close: float) -> Dict[str, float]:
+        """حساب نقاط المحور"""
+        pivot = (high + low + close) / 3
+        r1 = 2 * pivot - low
+        s1 = 2 * pivot - high
+        r2 = pivot + (high - low)
+        s2 = pivot - (high - low)
+        
+        return {
+            'pivot': pivot,
+            'r1': r1,
+            'r2': r2,
+            's1': s1,
+            's2': s2
+        }
+
+    def volume_analysis(self, volumes: List[float], price_trend: str, signal_type: str) -> Dict[str, Any]:
+        """تحليل حجم محسن"""
         if len(volumes) < 10:
             return {"trend": "stable", "strength": 0, "description": "⚪ حجم مستقر", "volume_ratio": 1.0}
         
         recent_volume = np.mean(volumes[-3:])
         previous_volume = np.mean(volumes[-6:-3])
-        
         volume_ratio = recent_volume / (previous_volume + 1e-10)
         
-        # ⬅️ تخفيف: شروط أقل صرامة للحجم
         strength = 0
-        if volume_ratio > 2.2:  # ⬅️ تخفيف من 2.5 إلى 2.2
-            strength = 10  # ⬅️ تخفيف من 12 إلى 10
+        if volume_ratio > 2.2:
+            strength = 10
             trend_desc = "📈 حجم متزايد بقوة"
-        elif volume_ratio > 1.6:  # ⬅️ تخفيف من 1.8 إلى 1.6
-            strength = 7   # ⬅️ تخفيف من 9 إلى 7
+        elif volume_ratio > 1.6:
+            strength = 7
             trend_desc = "📈 حجم متزايد"
-        elif volume_ratio > 1.2:  # ⬅️ تخفيف من 1.3 إلى 1.2
-            strength = 4   # ⬅️ تخفيف من 6 إلى 4
+        elif volume_ratio > 1.2:
+            strength = 4
             trend_desc = "📈 حجم متزايد قليلاً"
-        elif volume_ratio < 0.5:  # ⬅️ تخفيف من 0.4 إلى 0.5
-            strength = 6   # ⬅️ تخفيف من 8 إلى 6
+        elif volume_ratio < 0.5:
+            strength = 6
             trend_desc = "📉 حجم متراجع بقوة"
-        elif volume_ratio < 0.75:  # ⬅️ تخفيف من 0.7 إلى 0.75
-            strength = 3   # ⬅️ تخفيف من 5 إلى 3
+        elif volume_ratio < 0.75:
+            strength = 3
             trend_desc = "📉 حجم متراجع"
         else:
-            strength = 1   # ⬅️ تخفيف من 2 إلى 1
+            strength = 1
             trend_desc = "⚪ حجم مستقر"
         
-        # ⬅️ تخفيف: نقاط تأكيد أقل
+        # تحليل قمم الحجم
+        volume_spike_bonus = 0
+        if len(volumes) >= 20:
+            avg_volume = np.mean(volumes[-20:])
+            if recent_volume > avg_volume * 2.5:
+                volume_spike_bonus = 8
+                trend_desc += " - 📊 قمة حجم"
+            elif recent_volume > avg_volume * 1.8:
+                volume_spike_bonus = 4
+                trend_desc += " - 📊 ارتفاع حجم"
+        
+        strength += volume_spike_bonus
+        
         confirmation_bonus = 0
-        if signal_type == "bottom" and volume_ratio > 1.3 and price_trend == "down":  # ⬅️ تخفيف من 1.5 إلى 1.3
-            confirmation_bonus = 4  # ⬅️ تخفيف من 6 إلى 4
+        if signal_type == "bottom" and volume_ratio > 1.3 and price_trend == "down":
+            confirmation_bonus = 4
             trend_desc += " - مؤشر قاع"
         elif signal_type == "top" and volume_ratio > 1.3 and price_trend == "up":
             confirmation_bonus = 4
             trend_desc += " - مؤشر قمة"
         
         return {
-            "trend": "rising" if volume_ratio > 1.1 else "falling" if volume_ratio < 0.9 else "stable",  # ⬅️ تخفيف العتبات
+            "trend": "rising" if volume_ratio > 1.1 else "falling" if volume_ratio < 0.9 else "stable",
             "strength": strength + confirmation_bonus,
             "description": trend_desc,
             "volume_ratio": volume_ratio,
+            "volume_spike_bonus": volume_spike_bonus,
             "confirmation_bonus": confirmation_bonus
         }
 
@@ -582,12 +533,11 @@ class AdvancedMarketAnalyzer:
                 min_distance = distance
                 closest_level = level_name
         
-        # ⬅️ تخفيف: شروط أقل صرامة لفيبوناتشي
         strength = 0
-        if closest_level in ['0.0', '0.236', '0.382', '0.618', '0.786', '1.0'] and min_distance < 0.025:  # ⬅️ تخفيف من 0.02 إلى 0.025
-            strength = 6  # ⬅️ تخفيف من 8 إلى 6
+        if closest_level in ['0.0', '0.236', '0.382', '0.618', '0.786', '1.0'] and min_distance < 0.025:
+            strength = 6
         elif closest_level == '0.5' and min_distance < 0.025:
-            strength = 3  # ⬅️ تخفيف من 4 إلى 3
+            strength = 3
         
         return {
             'closest_level': closest_level,
@@ -595,68 +545,405 @@ class AdvancedMarketAnalyzer:
             'strength': strength
         }
 
-    def relaxed_enhance_scores(self, analysis: Dict[str, Any]) -> Dict[str, Any]:
-        """تحسين مخفف لنظام النقاط"""
-        indicators = analysis["indicators"]
+    def _get_trend_direction(self, prices: List[float]) -> str:
+        """تحديد اتجاه الاتجاه"""
+        if len(prices) < 5:
+            return "neutral"
         
-        # ⬅️ تخفيف: تعزيز أقل لتقارب المؤشرات
-        convergence_bonus = self._calculate_relaxed_convergence_bonus(indicators)
+        short_trend = (prices[-1] - prices[-5]) / prices[-5] * 100
+        if short_trend > 0.5:
+            return "up"
+        elif short_trend < -0.5:
+            return "down"
+        else:
+            return "neutral"
+
+    def _analyze_market_structure(self, prices: List[float]) -> str:
+        """تحليل هيكل السوق"""
+        if len(prices) < 20:
+            return "neutral"
         
-        # ⬅️ تخفيف: تعزيز أقل للإشارات القوية
-        strength_bonus = 0
-        if analysis["strongest_score"] > 70:  # ⬅️ تخفيف من 75 إلى 70
-            strength_bonus = 3  # ⬅️ تخفيف من 5 إلى 3
-        elif analysis["strongest_score"] > 60:  # ⬅️ تخفيف من 65 إلى 60
-            strength_bonus = 2  # ⬅️ تخفيف من 3 إلى 2
+        # تحليل القمم والقيعان
+        highs = [max(prices[i-3:i+1]) for i in range(3, len(prices)-3)]
+        lows = [min(prices[i-3:i+1]) for i in range(3, len(prices)-3)]
         
-        total_bonus = convergence_bonus + strength_bonus
+        higher_highs = sum(1 for i in range(1, len(highs)) if highs[i] > highs[i-1] else 0)
+        lower_lows = sum(1 for i in range(1, len(lows)) if lows[i] < lows[i-1] else 0)
         
-        if total_bonus > 0:
-            enhanced_top = min(100, analysis["top_score"] + total_bonus)
-            enhanced_bottom = min(100, analysis["bottom_score"] + total_bonus)
+        if higher_highs > lower_lows + 2:
+            return "uptrend"
+        elif lower_lows > higher_highs + 2:
+            return "downtrend"
+        else:
+            return "ranging"
+
+    def _calculate_trend_alignment_scores(self, prices: List[float]) -> Dict[str, int]:
+        """حساب نقاط محاذاة الاتجاه - تقليل التضارب"""
+        
+        if len(prices) < 20:
+            return {"top": 0, "bottom": 0}
+        
+        # تحليل الاتجاه متعدد الإطارات
+        short_trend = self._get_trend_direction(prices[-10:])
+        medium_trend = self._get_trend_direction(prices[-20:])
+        
+        top_score = 0
+        bottom_score = 0
+        
+        # مكافأة محاذاة الاتجاهات
+        if short_trend == "down" and medium_trend == "down":
+            top_score += 8  # الاتجاه هابط - تعزيز إشارات القمة
+        elif short_trend == "up" and medium_trend == "up":  
+            bottom_score += 8  # الاتجاه صاعد - تعزيز إشارات القاع
+        else:
+            # تضارب في الاتجاهات - تخفيف جميع الإشارات
+            top_score -= 3
+            bottom_score -= 3
+        
+        # تحليل هيكل السوق
+        market_structure = self._analyze_market_structure(prices)
+        if market_structure == "downtrend":
+            top_score += 4
+            bottom_score -= 2
+        elif market_structure == "uptrend":
+            bottom_score += 4  
+            top_score -= 2
+        
+        return {
+            "top": max(0, top_score),
+            "bottom": max(0, bottom_score)
+        }
+
+    def _calculate_momentum_scores(self, indicators: Dict) -> Dict[str, int]:
+        """حساب نقاط الزخم مع النظام الجديد"""
+        top_score = 0
+        bottom_score = 0
+        
+        rsi = indicators.get('rsi', 50)
+        stoch = indicators.get('stochastic', {'k': 50, 'd': 50})
+        macd = indicators.get('macd', {'histogram': 0})
+        
+        # RSI (12 نقطة)
+        if rsi > 75: top_score += 8
+        elif rsi > 65: top_score += 5
+        elif rsi > 55: top_score += 2
+        
+        if rsi < 25: bottom_score += 8
+        elif rsi < 35: bottom_score += 5
+        elif rsi < 45: bottom_score += 2
+        
+        # Stochastic (10 نقاط)
+        stoch_k = stoch.get('k', 50)
+        if stoch_k > 80: top_score += 6
+        elif stoch_k > 70: top_score += 4
+        elif stoch_k > 60: top_score += 2
+        
+        if stoch_k < 20: bottom_score += 6
+        elif stoch_k < 30: bottom_score += 4
+        elif stoch_k < 40: bottom_score += 2
+        
+        # MACD (13 نقطة)
+        macd_hist = macd.get('histogram', 0)
+        if macd_hist < -0.015: top_score += 8
+        elif macd_hist < -0.008: top_score += 5
+        elif macd_hist < 0: top_score += 2
+        
+        if macd_hist > 0.015: bottom_score += 8
+        elif macd_hist > 0.008: bottom_score += 5
+        elif macd_hist > 0: bottom_score += 2
+        
+        return {"top": top_score, "bottom": bottom_score}
+
+    def _calculate_price_action_scores(self, indicators: Dict, current_price: float) -> Dict[str, int]:
+        """حساب نقاط حركة السعر مع النظام الجديد"""
+        top_score = 0
+        bottom_score = 0
+        
+        candle_pattern = indicators.get('candle_pattern', {})
+        moving_averages = indicators.get('moving_averages', {})
+        
+        # أنماط الشموع (15 نقطة)
+        if candle_pattern.get('direction') == "top":
+            top_score += min(15, candle_pattern.get('strength', 0))
+        elif candle_pattern.get('direction') == "bottom":
+            bottom_score += min(15, candle_pattern.get('strength', 0))
+        
+        # المتوسطات المتحركة (10 نقاط)
+        ema_20 = moving_averages.get('ema_20', current_price)
+        ema_50 = moving_averages.get('ema_50', current_price)
+        
+        if current_price < ema_20 and current_price < ema_50:
+            top_score += 8
+        elif current_price < ema_20:
+            top_score += 4
+        
+        if current_price > ema_20 and current_price > ema_50:
+            bottom_score += 8
+        elif current_price > ema_20:
+            bottom_score += 4
+        
+        # قوة الاتجاه (5 نقاط)
+        trend_data = indicators.get('trend_analysis', {})
+        trend_strength = trend_data.get('strength', 0)
+        if trend_data.get('trend') == "bearish":
+            top_score += min(5, trend_strength // 2)
+        elif trend_data.get('trend') == "bullish":
+            bottom_score += min(5, trend_strength // 2)
+        
+        return {"top": top_score, "bottom": bottom_score}
+
+    def _calculate_key_levels_scores(self, indicators: Dict) -> Dict[str, int]:
+        """حساب نقاط المستويات الرئيسية مع النظام الجديد"""
+        top_score = 0
+        bottom_score = 0
+        
+        support_resistance = indicators.get('support_resistance', {})
+        fibonacci = indicators.get('fibonacci', {})
+        
+        # الدعم والمقاومة (15 نقطة)
+        if support_resistance.get('direction') == "top":
+            top_score += support_resistance.get('strength', 0)
+        elif support_resistance.get('direction') == "bottom":
+            bottom_score += support_resistance.get('strength', 0)
+        
+        # فيبوناتشي (7 نقاط)
+        fib_strength = fibonacci.get('strength', 0)
+        fib_level = fibonacci.get('closest_level')
+        
+        if fib_level in ['0.618', '0.786', '1.0']:
+            top_score += fib_strength
+        elif fib_level in ['0.0', '0.236', '0.382']:
+            bottom_score += fib_strength
+        
+        # نقاط المحور (3 نقاط)
+        pivot_data = indicators.get('pivot_points', {})
+        current_price = support_resistance.get('current_price', 0)
+        if pivot_data:
+            r1 = pivot_data.get('r1', current_price)
+            s1 = pivot_data.get('s1', current_price)
             
-            if enhanced_top > enhanced_bottom:
+            if abs(current_price - r1) / current_price < 0.01:
+                top_score += 2
+            if abs(current_price - s1) / current_price < 0.01:
+                bottom_score += 2
+        
+        return {"top": top_score, "bottom": bottom_score}
+
+    def _calculate_volume_scores(self, indicators: Dict, signal_type: str) -> Dict[str, int]:
+        """حساب نقاط الحجم مع النظام الجديد"""
+        top_score = 0
+        bottom_score = 0
+        
+        volume_data = indicators.get('volume_trend', {})
+        volume_strength = volume_data.get('strength', 0)
+        
+        # اتجاه الحجم (15 نقطة)
+        if signal_type == "top":
+            top_score += min(15, volume_strength)
+        else:
+            bottom_score += min(15, volume_strength)
+        
+        # قمم الحجم (10 نقاط)
+        volume_spike_bonus = volume_data.get('volume_spike_bonus', 0)
+        top_score += volume_spike_bonus
+        bottom_score += volume_spike_bonus
+        
+        return {"top": top_score, "bottom": bottom_score}
+
+    def calculate_enhanced_scores(self, indicators: Dict, current_price: float, prices: List[float], signal_type: str) -> Dict[str, Any]:
+        """حساب النقاط مع النظام الجديد المحسن"""
+        
+        # حساب النقاط من كل قسم
+        momentum_scores = self._calculate_momentum_scores(indicators)
+        price_action_scores = self._calculate_price_action_scores(indicators, current_price)
+        key_levels_scores = self._calculate_key_levels_scores(indicators)
+        volume_scores = self._calculate_volume_scores(indicators, signal_type)
+        trend_scores = self._calculate_trend_alignment_scores(prices)
+        
+        # تجميع النقاط
+        base_top_score = (momentum_scores["top"] + price_action_scores["top"] + 
+                         key_levels_scores["top"] + volume_scores["top"] + trend_scores["top"])
+        
+        base_bottom_score = (momentum_scores["bottom"] + price_action_scores["bottom"] + 
+                           key_levels_scores["bottom"] + volume_scores["bottom"] + trend_scores["bottom"])
+        
+        # تطبيق وزن الجلسة
+        session_weight = get_session_weight()
+        final_top_score = int(base_top_score * session_weight)
+        final_bottom_score = int(base_bottom_score * session_weight)
+        
+        return {
+            "top_score": min(final_top_score, 100),
+            "bottom_score": min(final_bottom_score, 100),
+            "breakdown": {
+                "momentum": momentum_scores,
+                "price_action": price_action_scores,
+                "key_levels": key_levels_scores,
+                "volume": volume_scores,
+                "trend_alignment": trend_scores,
+                "session_weight": session_weight
+            }
+        }
+
+    def enhanced_conflict_filter(self, analysis: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """مرشح تضارب محسن يعتمد على النظام الجديد"""
+        
+        if not CONFLICT_MANAGEMENT["ENABLE_ENHANCED_FILTERING"]:
+            return analysis
+        
+        breakdown = analysis.get("breakdown", {})
+        
+        # 1. فحص تضارب المكونات الأساسية
+        momentum_conflict = self._check_momentum_conflict(breakdown.get("momentum", {}))
+        price_action_conflict = self._check_price_action_conflict(breakdown.get("price_action", {}))
+        
+        # 2. إذا كان هناك تضارب قوي في المكونات الأساسية
+        if momentum_conflict and price_action_conflict:
+            self.conflict_stats["signals_filtered"] += 1
+            safe_log_info("🛑 تصفية إشارة due to core indicator conflict", "system", "conflict_filter")
+            return None
+        
+        # 3. تطبيق عقوبة التضارب
+        conflict_penalty = self._calculate_conflict_penalty(breakdown)
+        if conflict_penalty > 0:
+            analysis["top_score"] = max(0, analysis["top_score"] - conflict_penalty)
+            analysis["bottom_score"] = max(0, analysis["bottom_score"] - conflict_penalty)
+            analysis["conflict_penalty_applied"] = conflict_penalty
+            system_stats["conflict_penalties_applied"] += 1
+        
+        self.conflict_stats["conflicts_resolved"] += 1
+        return analysis
+
+    def _check_momentum_conflict(self, momentum_data: Dict) -> bool:
+        """التحقق من تضارب مؤشرات الزخم"""
+        self.conflict_stats["total_conflicts_detected"] += 1
+        
+        # تحليل تباعد مؤشرات الزخم
+        rsi_top = momentum_data.get('top', 0)
+        rsi_bottom = momentum_data.get('bottom', 0)
+        
+        # تضارب عندما يكون كلا المؤشرين قويين
+        if rsi_top > 8 and rsi_bottom > 8:
+            return True
+        
+        return False
+
+    def _check_price_action_conflict(self, price_action_data: Dict) -> bool:
+        """التحقق من تضارب حركة السعر"""
+        top_score = price_action_data.get('top', 0)
+        bottom_score = price_action_data.get('bottom', 0)
+        
+        # تضارب عندما تكون إشارات حركة السعر متقاربة وقوية
+        if abs(top_score - bottom_score) < 3 and (top_score > 10 or bottom_score > 10):
+            return True
+        
+        return False
+
+    def _calculate_conflict_penalty(self, breakdown: Dict) -> int:
+        """حساب عقوبة التضارب"""
+        penalty = 0
+        
+        momentum = breakdown.get('momentum', {})
+        price_action = breakdown.get('price_action', {})
+        
+        # عقوبة تضارب الزخم
+        if abs(momentum.get('top', 0) - momentum.get('bottom', 0)) < 5:
+            penalty += 4
+        
+        # عقوبة تضارب حركة السعر
+        if abs(price_action.get('top', 0) - price_action.get('bottom', 0)) < 4:
+            penalty += 3
+        
+        # عقوبة تضارب الاتجاه
+        trend_alignment = breakdown.get('trend_alignment', {})
+        if trend_alignment.get('top', 0) > 0 and trend_alignment.get('bottom', 0) > 0:
+            penalty += 2
+        
+        return min(penalty, CONFLICT_MANAGEMENT["MAX_CONFLICT_PENALTY"])
+
+    def analyze_market_condition(self, prices: List[float], volumes: List[float], 
+                               highs: List[float], lows: List[float]) -> Dict[str, Any]:
+        """تحليل شامل لحالة السوق - النسخة المحسنة"""
+        
+        if len(prices) < 20:
+            return self._get_empty_analysis()
+        
+        try:
+            # حساب المؤشرات الأساسية
+            rsi = self.calculate_rsi(prices)
+            stoch = self.calculate_stochastic(prices)
+            macd = self.calculate_macd(prices)
+            moving_averages = self.calculate_moving_averages(prices)
+            candle_pattern = self.detect_candle_pattern(prices, highs, lows)
+            support_resistance = self.analyze_support_resistance(prices)
+            
+            # تحليل الاتجاه
+            price_trend = "up" if prices[-1] > prices[-5] else "down" if prices[-1] < prices[-5] else "neutral"
+            trend_analysis = self.simple_trend_analysis(prices)
+            
+            # تحليل الحجم المحسن
+            strongest_signal_temp = "top" if rsi > 65 else "bottom" if rsi < 35 else "neutral"
+            volume_analysis = self.volume_analysis(volumes, price_trend, strongest_signal_temp)
+            
+            # المؤشرات الإضافية
+            fib_levels = self.calculate_fibonacci_levels(prices)
+            pivot_points = self.calculate_pivot_points(highs[-1], lows[-1], prices[-1])
+            
+            # تجميع المؤشرات
+            indicators = {
+                "rsi": round(rsi, 2),
+                "stochastic": stoch,
+                "macd": macd,
+                "moving_averages": moving_averages,
+                "candle_pattern": candle_pattern,
+                "support_resistance": support_resistance,
+                "volume_trend": volume_analysis,
+                "fibonacci": fib_levels,
+                "pivot_points": pivot_points,
+                "trend_analysis": trend_analysis
+            }
+            
+            # استخدام النظام الجديد لحساب النقاط
+            current_price = prices[-1]
+            enhanced_scores = self.calculate_enhanced_scores(indicators, current_price, prices, strongest_signal_temp)
+            
+            # تحديد الإشارة الأقوى
+            top_score = enhanced_scores["top_score"]
+            bottom_score = enhanced_scores["bottom_score"]
+            
+            if top_score > bottom_score:
                 strongest_signal = "top"
-                strongest_score = enhanced_top
+                strongest_score = top_score
             else:
                 strongest_signal = "bottom"
-                strongest_score = enhanced_bottom
+                strongest_score = bottom_score
             
-            return {
-                **analysis,
-                "top_score": enhanced_top,
-                "bottom_score": enhanced_bottom,
+            initial_analysis = {
+                "top_score": top_score,
+                "bottom_score": bottom_score,
                 "strongest_signal": strongest_signal,
                 "strongest_score": strongest_score,
                 "alert_level": get_alert_level(strongest_score),
-                "enhancement_bonus": total_bonus
+                "indicators": indicators,
+                "breakdown": enhanced_scores["breakdown"],
+                "timestamp": time.time(),
+                "prices": prices,
+                "highs": highs,
+                "lows": lows
             }
-        
-        return analysis
-
-    def _calculate_relaxed_convergence_bonus(self, indicators: Dict) -> int:
-        """حساب نقاط تقارب مخففة بين المؤشرات"""
-        bonus = 0
-        
-        # ⬅️ تخفيف: شروط أقل صرامة للتقارب
-        rsi = indicators.get('rsi', 50)
-        stoch_k = indicators.get('stoch_k', 50)
-        
-        if (rsi > 65 and stoch_k > 75) or (rsi < 35 and stoch_k < 25):  # ⬅️ تخفيف العتبات
-            bonus += 3  # ⬅️ تخفيف من 4 إلى 3
-        
-        macd_histogram = indicators.get('macd_histogram', 0)
-        if abs(macd_histogram) > 0.008:  # ⬅️ تخفيف من 0.01 إلى 0.008
-            bonus += 2  # ⬅️ تخفيف من 3 إلى 2
-        
-        candle_pattern = indicators.get('candle_pattern', {})
-        volume_trend = indicators.get('volume_trend', {})
-        
-        if (candle_pattern.get('strength', 0) > 6 and  # ⬅️ تخفيف من 8 إلى 6
-            volume_trend.get('volume_ratio', 1) > 1.3):  # ⬅️ تخفيف من 1.5 إلى 1.3
-            bonus += 2  # ⬅️ تخفيف من 3 إلى 2
-        
-        return min(bonus, 6)  # ⬅️ تخفيف من 8 إلى 6
+            
+            # تطبيق مرشح التضارب المحسن
+            filtered_analysis = self.enhanced_conflict_filter(initial_analysis)
+            
+            if filtered_analysis:
+                system_stats["trend_alignment_applied"] += 1
+                return filtered_analysis
+            else:
+                return self._get_empty_analysis()
+            
+        except Exception as e:
+            safe_log_error(f"خطأ في تحليل السوق: {e}", "analyzer", "market_analysis")
+            return self._get_empty_analysis()
 
     def simple_trend_analysis(self, prices: List[float]) -> Dict[str, Any]:
         """تحليل اتجاه بسيط"""
@@ -667,13 +954,12 @@ class AdvancedMarketAnalyzer:
         medium_trend = (prices[-1] - prices[-10]) / prices[-10] * 100
         
         trend_strength = 0
-        if abs(short_trend) > 2.5:  # ⬅️ تخفيف من 3.0 إلى 2.5
-            trend_strength = 6  # ⬅️ تخفيف من 8 إلى 6
-        elif abs(short_trend) > 1.2:  # ⬅️ تخفيف من 1.5 إلى 1.2
-            trend_strength = 3  # ⬅️ تخفيف من 4 إلى 3
+        if abs(short_trend) > 2.5:
+            trend_strength = 6
+        elif abs(short_trend) > 1.2:
+            trend_strength = 3
         
-        # ⬅️ تخفيف: شروط أقل صراحة للاتجاه
-        if short_trend > 0.8 and medium_trend > 0.4:  # ⬅️ تخفيف العتبات
+        if short_trend > 0.8 and medium_trend > 0.4:
             trend = "bullish"
         elif short_trend < -0.8 and medium_trend < -0.4:
             trend = "bearish"
@@ -687,170 +973,6 @@ class AdvancedMarketAnalyzer:
             "medium_trend_percent": medium_trend
         }
 
-    def analyze_market_condition(self, prices: List[float], volumes: List[float], 
-                               highs: List[float], lows: List[float]) -> Dict[str, Any]:
-        """تحليل شامل لحالة السوق - النسخة المخففة"""
-        
-        if len(prices) < 20:
-            return self._get_empty_analysis()
-        
-        try:
-            rsi = self.calculate_rsi(prices)
-            stoch = self.calculate_stochastic(prices)
-            macd = self.calculate_macd(prices)
-            moving_averages = self.calculate_moving_averages(prices)
-            candle_pattern = self.detect_candle_pattern(prices, highs, lows)
-            support_resistance = self.analyze_support_resistance(prices)
-            
-            price_trend = "up" if prices[-1] > prices[-5] else "down" if prices[-1] < prices[-5] else "neutral"
-            
-            strongest_signal_temp = "top" if rsi > 65 else "bottom" if rsi < 35 else "neutral"  # ⬅️ تخفيف العتبات
-            volume_analysis = self.relaxed_volume_analysis(volumes, price_trend, strongest_signal_temp)
-            
-            fib_levels = self.calculate_fibonacci_levels(prices)
-            
-            top_score = self._calculate_relaxed_top_score(rsi, stoch, macd, moving_averages, candle_pattern, 
-                                                        support_resistance, volume_analysis, fib_levels, prices[-1])
-            
-            bottom_score = self._calculate_relaxed_bottom_score(rsi, stoch, macd, moving_averages, candle_pattern,
-                                                              support_resistance, volume_analysis, fib_levels, prices[-1])
-            
-            session_weight = get_session_weight()
-            top_score = int(top_score * session_weight)
-            bottom_score = int(bottom_score * session_weight)
-            
-            strongest_signal = "top" if top_score > bottom_score else "bottom"
-            strongest_score = max(top_score, bottom_score)
-            
-            initial_analysis = {
-                "top_score": min(top_score, 100),
-                "bottom_score": min(bottom_score, 100),
-                "strongest_signal": strongest_signal,
-                "strongest_score": strongest_score,
-                "alert_level": get_alert_level(strongest_score),
-                "indicators": {
-                    "rsi": round(rsi, 2),
-                    "stoch_k": stoch['k'],
-                    "stoch_d": stoch['d'],
-                    "macd_histogram": macd['histogram'],
-                    "ema_20": moving_averages['ema_20'],
-                    "ema_50": moving_averages['ema_50'],
-                    "candle_pattern": candle_pattern,
-                    "support_resistance": support_resistance,
-                    "volume_trend": volume_analysis,
-                    "fibonacci": fib_levels,
-                    "session_weight": session_weight
-                },
-                "timestamp": time.time()
-            }
-            
-            # ⬅️ تخفيف: تطبيق التحسين على إشارات أضعف
-            if strongest_score >= ENHANCEMENT_SETTINGS['MIN_STRENGTH_FOR_ENHANCE']:
-                enhanced_analysis = self.relaxed_enhance_scores(initial_analysis)
-                if enhanced_analysis != initial_analysis:
-                    safe_log_info(f"🎯 تطبيق تحسين مخفف: +{enhanced_analysis.get('enhancement_bonus', 0)} نقطة", "analyzer", "relaxed_enhance")
-                    return enhanced_analysis
-            
-            return initial_analysis
-            
-        except Exception as e:
-            safe_log_error(f"خطأ في تحليل السوق: {e}", "analyzer", "market_analysis")
-            return self._get_empty_analysis()
-
-    def _calculate_relaxed_top_score(self, rsi: float, stoch: Dict, macd: Dict, moving_averages: Dict,
-                                   candle_pattern: Dict, support_resistance: Dict,
-                                   volume_analysis: Dict, fib_levels: Dict, current_price: float) -> int:
-        """حساب نقاط قمة مخففة"""
-        score = 0
-        
-        # MOMENTUM بشروط مخففة
-        if rsi > 75: score += 10  # ⬅️ تخفيف من 80/12 إلى 75/10
-        elif rsi > 65: score += 6  # ⬅️ تخفيف من 70/8 إلى 65/6
-        elif rsi > 55: score += 3  # ⬅️ تخفيف من 60/4 إلى 55/3
-        
-        if stoch['k'] > 80 and stoch['d'] > 80: score += 10  # ⬅️ تخفيف
-        elif stoch['k'] > 70 and stoch['d'] > 70: score += 6
-        elif stoch['k'] > 60 and stoch['d'] > 60: score += 3
-        
-        if macd['histogram'] < -0.015: score += 5  # ⬅️ تخفيف
-        elif macd['histogram'] < -0.008: score += 3
-        elif macd['histogram'] < 0: score += 1
-        
-        if macd['histogram'] < 0 and macd['macd'] < macd['signal']: score += 3  # ⬅️ تخفيف
-        
-        # PRICE_ACTION بشروط مخففة
-        if candle_pattern["direction"] == "top":
-            score += candle_pattern["strength"]
-        
-        if current_price < moving_averages['ema_20'] and current_price < moving_averages['ema_50']:
-            score += 8  # ⬅️ تخفيف
-        elif current_price < moving_averages['ema_20']:
-            score += 4   # ⬅️ تخفيف
-        
-        # KEY_LEVELS بشروط مخففة
-        if support_resistance["direction"] == "top":
-            score += support_resistance["strength"]
-        
-        score += fib_levels["strength"]
-        
-        if fib_levels.get('closest_level') in ['0.618', '0.786', '1.0'] and fib_levels['distance'] < 0.02:  # ⬅️ تخفيف
-            score += 3  # ⬅️ تخفيف
-        
-        # VOLUME_CONFIRMATION بشروط مخففة
-        score += volume_analysis["strength"]
-        
-        if volume_analysis["volume_ratio"] > 1.1 and volume_analysis["trend"] == "rising":  # ⬅️ تخفيف
-            score += 3  # ⬅️ تخفيف
-        
-        return min(score, 100)
-
-    def _calculate_relaxed_bottom_score(self, rsi: float, stoch: Dict, macd: Dict, moving_averages: Dict,
-                                      candle_pattern: Dict, support_resistance: Dict,
-                                      volume_analysis: Dict, fib_levels: Dict, current_price: float) -> int:
-        """حساب نقاط قاع مخففة"""
-        score = 0
-        
-        # MOMENTUM بشروط مخففة
-        if rsi < 25: score += 10  # ⬅️ تخفيف
-        elif rsi < 35: score += 6
-        elif rsi < 45: score += 3
-        
-        if stoch['k'] < 20 and stoch['d'] < 20: score += 10
-        elif stoch['k'] < 30 and stoch['d'] < 30: score += 6
-        elif stoch['k'] < 40 and stoch['d'] < 40: score += 3
-        
-        if macd['histogram'] > 0.015: score += 5
-        elif macd['histogram'] > 0.008: score += 3
-        elif macd['histogram'] > 0: score += 1
-        
-        if macd['histogram'] > 0 and macd['macd'] > macd['signal']: score += 3
-        
-        # PRICE_ACTION بشروط مخففة
-        if candle_pattern["direction"] == "bottom":
-            score += candle_pattern["strength"]
-        
-        if current_price > moving_averages['ema_20'] and current_price > moving_averages['ema_50']:
-            score += 8
-        elif current_price > moving_averages['ema_20']:
-            score += 4
-        
-        # KEY_LEVELS بشروط مخففة
-        if support_resistance["direction"] == "bottom":
-            score += support_resistance["strength"]
-        
-        score += fib_levels["strength"]
-        
-        if fib_levels.get('closest_level') in ['0.0', '0.236', '0.382'] and fib_levels['distance'] < 0.02:
-            score += 3
-        
-        # VOLUME_CONFIRMATION بشروط مخففة
-        score += volume_analysis["strength"]
-        
-        if volume_analysis["volume_ratio"] > 1.1 and volume_analysis["trend"] == "rising":
-            score += 3
-        
-        return min(score, 100)
-
     def _get_empty_analysis(self) -> Dict[str, Any]:
         """تحليل افتراضي"""
         return {
@@ -860,49 +982,13 @@ class AdvancedMarketAnalyzer:
             "strongest_score": 0,
             "alert_level": get_alert_level(0),
             "indicators": {},
+            "breakdown": {},
             "timestamp": time.time()
         }
 
-# ⬅️ جديد: مسح مخفف يجمع كل التحسينات المخففة
-async def relaxed_enhanced_scan(coin_key, coin_data):
-    """مسح مخفف يجمع كل التحسينات المخففة"""
-    try:
-        # استخدام نظام التأكيد المخفف
-        confirmed_signal = await relaxed_confirmation_check(coin_data)
-        
-        if not confirmed_signal:
-            return None
-        
-        # تطبيق تحليل الاتجاه
-        trend_analysis = data_fetcher.analyzer.simple_trend_analysis(confirmed_signal['prices'])
-        
-        # تطبيق التصفية المخففة
-        final_signal = relaxed_conflict_filter(confirmed_signal)
-        
-        if final_signal and final_signal['alert_level']['send_alert']:
-            relaxed_bonus = final_signal.get('_relaxed', False)
-            if relaxed_bonus:
-                system_stats["relaxed_signals_sent"] += 1
-                safe_log_info(f"🎯 إشارة مخففة لـ {coin_data['symbol']}: {final_signal['strongest_score']} نقطة (بفضل التخفيف)", 
-                             coin_data['symbol'], "relaxed_enhance")
-            else:
-                safe_log_info(f"🎯 إشارة قوية لـ {coin_data['symbol']}: {final_signal['strongest_score']} نقطة", 
-                             coin_data['symbol'], "relaxed_enhance")
-            
-            system_stats["enhanced_signals_sent"] += 1
-            return final_signal
-        
-        return None
-        
-    except Exception as e:
-        safe_log_error(f"خطأ في المسح المخفف لـ {coin_data['symbol']}: {e}", coin_data['symbol'], "relaxed_enhance")
-        return None
-
-# باقي الكود (TelegramNotifier, ExecutorBotClient, BinanceDataFetcher) يبقى كما هو
-# مع تحديث الإصدار إلى 2.5.0 والإحصائيات الجديدة
 
 class TelegramNotifier:
-    """إشعارات التليجرام مع صور الشارت"""
+    """إشعارات التليجرام مع صور الشارت - النسخة المحدثة"""
     
     def __init__(self, token: str, chat_id: str):
         self.token = token
@@ -921,14 +1007,15 @@ class TelegramNotifier:
             return False
         
         try:
-            message = self._build_beautiful_message(coin, timeframe, analysis, price)
+            message = self._build_enhanced_message(coin, timeframe, analysis, price)
             chart_image = self._create_beautiful_chart(coin, timeframe, prices, highs, lows, analysis, price)
             
             if chart_image:
                 success = await self._send_photo_with_caption(message, chart_image)
                 if success:
                     relaxed_note = " (بفضل الشروط المخففة)" if analysis.get('_relaxed') else ""
-                    safe_log_info(f"📨 تم إرسال إشعار{relaxed_note} لـ {coin} ({timeframe}) - {strongest_signal} - {strongest_score} نقطة", 
+                    conflict_note = f" (عقوبة تضارب: -{analysis.get('conflict_penalty_applied', 0)} نقطة)" if analysis.get('conflict_penalty_applied', 0) > 0 else ""
+                    safe_log_info(f"📨 تم إرسال إشعار{relaxed_note}{conflict_note} لـ {coin} ({timeframe}) - {strongest_signal} - {strongest_score} نقطة", 
                                 coin, "telegram")
                     system_stats["total_alerts_sent"] += 1
                     return True
@@ -936,7 +1023,8 @@ class TelegramNotifier:
                 success = await self._send_text_message(message)
                 if success:
                     relaxed_note = " (بفضل الشروط المخففة)" if analysis.get('_relaxed') else ""
-                    safe_log_info(f"📨 تم إرسال إشعار نصي{relaxed_note} لـ {coin} ({timeframe}) - {strongest_signal} - {strongest_score} نقطة", 
+                    conflict_note = f" (عقوبة تضارب: -{analysis.get('conflict_penalty_applied', 0)} نقطة)" if analysis.get('conflict_penalty_applied', 0) > 0 else ""
+                    safe_log_info(f"📨 تم إرسال إشعار نصي{relaxed_note}{conflict_note} لـ {coin} ({timeframe}) - {strongest_signal} - {strongest_score} نقطة", 
                                 coin, "telegram")
                     system_stats["total_alerts_sent"] += 1
                     return True
@@ -957,13 +1045,13 @@ class TelegramNotifier:
             syria_time = get_syria_time()
             
             message = f"""
-💓 *نبضة النظام - ماسح القمم والقيعان v2.5*
+💓 *نبضة النظام - ماسح القمم والقيعان v3.0*
 
 ⏰ *الوقت السوري:* `{syria_time.strftime('%H:%M %d/%m/%Y')}`
 🌍 *الجلسة الحالية:* {current_session['emoji']} `{current_session['name']}`
 ⚖️ *وزن الجلسة:* `{current_session['weight'] * 100}%`
 
-📊 *إحصائيات النظام:*
+📊 *إحصائيات النظام المتقدمة:*
 • ⏱️ *مدة التشغيل:* `{uptime_str}`
 • 🔍 *عدد عمليات المسح:* `{system_stats['total_scans']}`
 • 📨 *التنبيهات المرسلة:* `{system_stats['total_alerts_sent']}`
@@ -974,7 +1062,14 @@ class TelegramNotifier:
 • 🎯 *إشارات محسنة:* `{system_stats['enhanced_signals_sent']}`
 • 💎 *مرات تطبيق bonus:* `{system_stats['confirmation_bonus_applied']}`
 • 🌟 *إشارات بفضل التخفيف:* `{system_stats['relaxed_signals_sent']}`
+• 📈 *محاذاة اتجاه مطبقة:* `{system_stats['trend_alignment_applied']}`
+• ⚠️ *عقوبات تضارب مطبقة:* `{system_stats['conflict_penalties_applied']}`
 • 💾 *حجم الكاش:* `{len(data_fetcher.cache)}` عملة
+
+🔄 *النظام المحسن:*
+• 🎯 *تقليل التضارب:* `{CONFLICT_MANAGEMENT['ENABLE_ENHANCED_FILTERING']}`
+• 📊 *محاذاة الاتجاه:* `{CONFLICT_MANAGEMENT['TREND_ALIGNMENT_BONUS']}`
+• 🔊 *تأكيد الحجم:* `{CONFLICT_MANAGEMENT['REQUIRE_VOLUME_CONFIRMATION']}`
 
 🪙 *العملات النشطة:* `{', '.join(SUPPORTED_COINS.keys())}`
 ⏰ *الأطر الزمنية:* `{', '.join(TIMEFRAMES)}`
@@ -983,7 +1078,7 @@ class TelegramNotifier:
 💓 *آخر نبضة:* `{system_stats['last_heartbeat'] or 'لم يبدأ بعد'}`
 🔗 *آخر نبضة منفذ:* `{system_stats['last_executor_heartbeat'] or 'لم يبدأ بعد'}`
 
-✅ *الحالة:* النظام يعمل بشكل طبيعي مع الشروط المخففة
+✅ *الحالة:* النظام يعمل بشكل طبيعي مع النظام المحسن لتقليل التضارب
             """
             
             payload = {
@@ -1021,13 +1116,14 @@ class TelegramNotifier:
         else:
             return f"{minutes} دقيقة"
 
-    def _build_beautiful_message(self, coin: str, timeframe: str, analysis: Dict[str, Any], price: float) -> str:
-        """بناء رسالة جميلة ومفصلة"""
+    def _build_enhanced_message(self, coin: str, timeframe: str, analysis: Dict[str, Any], price: float) -> str:
+        """بناء رسالة محسنة مع تفاصيل النظام الجديد"""
         
         alert_level = analysis["alert_level"]
         strongest_signal = analysis["strongest_signal"]
         strongest_score = analysis["strongest_score"]
         indicators = analysis["indicators"]
+        breakdown = analysis.get("breakdown", {})
         current_session = get_current_session()
         
         if strongest_signal == "top":
@@ -1042,7 +1138,10 @@ class TelegramNotifier:
         message = f"{signal_emoji} *{signal_text} - {coin.upper()}* {signal_emoji}\n"
         message += "═" * 40 + "\n\n"
         
-        # ⬅️ جديد: إضافة ملاحظة إذا كانت الإشارة بفضل التخفيف
+        # معلومات التضارب والعقوبات
+        if analysis.get('conflict_penalty_applied', 0) > 0:
+            message += f"⚠️ *ملاحظة:* تطبيق عقوبة تضارب `-{analysis['conflict_penalty_applied']} نقطة`\n\n"
+        
         if analysis.get('_relaxed'):
             message += f"🌟 *ملاحظة:* هذه الإشارة مرسلة بفضل الشروط المخففة\n\n"
         
@@ -1053,6 +1152,25 @@ class TelegramNotifier:
         message += f"🎯 *قوة الإشارة:* {alert_level['emoji']} *{strongest_score}/100*\n"
         message += f"📊 *مستوى الثقة:* `{alert_level['level']}`\n\n"
         
+        # تفاصيل التحليل المحسن
+        if breakdown:
+            message += "📈 *تفصيل النقاط المحسنة:*\n"
+            
+            momentum = breakdown.get('momentum', {})
+            message += f"• ⚡ الزخم: `{momentum.get('top', 0) if strongest_signal == 'top' else momentum.get('bottom', 0)}/35`\n"
+            
+            price_action = breakdown.get('price_action', {})
+            message += f"• 📊 حركة السعر: `{price_action.get('top', 0) if strongest_signal == 'top' else price_action.get('bottom', 0)}/30`\n"
+            
+            key_levels = breakdown.get('key_levels', {})
+            message += f"• 🎯 المستويات: `{key_levels.get('top', 0) if strongest_signal == 'top' else key_levels.get('bottom', 0)}/25`\n"
+            
+            volume = breakdown.get('volume', {})
+            message += f"• 🔊 الحجم: `{volume.get('top', 0) if strongest_signal == 'top' else volume.get('bottom', 0)}/25`\n"
+            
+            trend = breakdown.get('trend_alignment', {})
+            message += f"• 📈 محاذاة الاتجاه: `{trend.get('top', 0) if strongest_signal == 'top' else trend.get('bottom', 0)}/15`\n\n"
+        
         if analysis.get('confirmed'):
             message += f"✅ *مؤكد بـ {CONFIRMATION_TIMEFRAME}:* `+{analysis.get('confirmation_bonus', 0)} نقطة`\n"
         if analysis.get('enhancement_bonus', 0) > 0:
@@ -1062,25 +1180,28 @@ class TelegramNotifier:
         message += f"🌍 *الجلسة:* {current_session['emoji']} {current_session['name']}\n"
         message += f"⚖️ *وزن الجلسة:* `{current_session['weight']*100}%`\n\n"
         
-        message += "📈 *المؤشرات الفنية:*\n"
+        message += "📊 *المؤشرات الفنية الرئيسية:*\n"
         
         if 'rsi' in indicators:
-            rsi_emoji = "🔴" if indicators['rsi'] > 65 else "🟢" if indicators['rsi'] < 35 else "🟡"  # ⬅️ تحديث العتبات
+            rsi_emoji = "🔴" if indicators['rsi'] > 65 else "🟢" if indicators['rsi'] < 35 else "🟡"
             rsi_status = "تشبع شرائي" if indicators['rsi'] > 65 else "تشبع بيعي" if indicators['rsi'] < 35 else "محايد"
             message += f"• {rsi_emoji} *RSI:* `{indicators['rsi']}` ({rsi_status})\n"
         
-        if 'stoch_k' in indicators:
-            stoch_emoji = "🔴" if indicators['stoch_k'] > 75 else "🟢" if indicators['stoch_k'] < 25 else "🟡"  # ⬅️ تحديث العتبات
-            stoch_status = "تشبع شرائي" if indicators['stoch_k'] > 75 else "تشبع بيعي" if indicators['stoch_k'] < 25 else "محايد"
-            message += f"• {stoch_emoji} *Stochastic:* `K={indicators['stoch_k']}, D={indicators['stoch_d']}` ({stoch_status})\n"
+        if 'stochastic' in indicators:
+            stoch = indicators['stochastic']
+            stoch_emoji = "🔴" if stoch.get('k', 50) > 75 else "🟢" if stoch.get('k', 50) < 25 else "🟡"
+            stoch_status = "تشبع شرائي" if stoch.get('k', 50) > 75 else "تشبع بيعي" if stoch.get('k', 50) < 25 else "محايد"
+            message += f"• {stoch_emoji} *Stochastic:* `K={stoch.get('k', 50)}, D={stoch.get('d', 50)}` ({stoch_status})\n"
         
-        if 'macd_histogram' in indicators:
-            macd_emoji = "🟢" if indicators['macd_histogram'] > 0 else "🔴"
-            macd_trend = "صاعد" if indicators['macd_histogram'] > 0 else "هابط"
-            message += f"• {macd_emoji} *MACD Hist:* `{indicators['macd_histogram']:.4f}` ({macd_trend})\n"
+        if 'macd' in indicators:
+            macd_data = indicators['macd']
+            macd_emoji = "🟢" if macd_data.get('histogram', 0) > 0 else "🔴"
+            macd_trend = "صاعد" if macd_data.get('histogram', 0) > 0 else "هابط"
+            message += f"• {macd_emoji} *MACD Hist:* `{macd_data.get('histogram', 0):.4f}` ({macd_trend})\n"
         
-        if 'ema_20' in indicators and 'ema_50' in indicators:
-            ema_status = "صاعد" if price > indicators['ema_20'] and price > indicators['ema_50'] else "هابط" if price < indicators['ema_20'] and price < indicators['ema_50'] else "متذبذب"
+        if 'moving_averages' in indicators:
+            ma_data = indicators['moving_averages']
+            ema_status = "صاعد" if price > ma_data.get('ema_20', 0) and price > ma_data.get('ema_50', 0) else "هابط" if price < ma_data.get('ema_20', 0) and price < ma_data.get('ema_50', 0) else "متذبذب"
             ema_emoji = "🟢" if ema_status == "صاعد" else "🔴" if ema_status == "هابط" else "🟡"
             message += f"• {ema_emoji} *المتوسطات:* `{ema_status}`\n"
         
@@ -1098,18 +1219,17 @@ class TelegramNotifier:
         message += "\n"
         
         if strongest_signal == "top":
-            recommendation = "💡 *التوصية:* مراقبة فرص البيع والربح"
+            recommendation = "💡 *التوصية:* مراقبة فرص البيع والربح مع نظام إدارة المخاطر المحسن"
         else:
-            recommendation = "💡 *التوصية:* مراقبة فرص الشراء والدخول"
+            recommendation = "💡 *التوصية:* مراقبة فرص الشراء والدخول مع نظام إدارة المخاطر المحسن"
         
         message += f"{recommendation}\n\n"
         
         message += "─" * 30 + "\n"
-        message += f"⚡ *ماسح القمم والقيعان v2.5*"
+        message += f"⚡ *ماسح القمم والقيعان v3.0 - النظام المحسن*"
         
         return message
 
-    # باقي دوال TelegramNotifier تبقى كما هي
     def _create_beautiful_chart(self, coin: str, timeframe: str, prices: List[float], 
                               highs: List[float], lows: List[float], analysis: Dict[str, Any], 
                               current_price: float) -> Optional[str]:
@@ -1145,7 +1265,7 @@ class TelegramNotifier:
                     plt.axhline(y=sr_data["resistance"], color='red', linestyle='--', 
                               alpha=0.7, label=f'مقاومة: ${sr_data["resistance"]:,.2f}')
             
-            plt.title(f'{coin.upper()} - إطار {timeframe}\nإشارة {analysis["strongest_signal"]} - قوة {analysis["strongest_score"]}/100', 
+            plt.title(f'{coin.upper()} - إطار {timeframe}\nإشارة {analysis["strongest_signal"]} - قوة {analysis["strongest_score"]}/100\nالنظام المحسن v3.0', 
                      fontsize=16, fontweight='bold', color=colors["primary"], pad=20)
             
             plt.xlabel('الوقت', fontsize=12)
@@ -1219,12 +1339,9 @@ class TelegramNotifier:
         clean_message = message.replace('_', '\\_').replace('*', '\\*').replace('`', '\\`')
         return clean_message
 
-# باقي الكود (ExecutorBotClient, BinanceDataFetcher, والمهام) يبقى كما هو
-# مع تحديث الإصدار إلى 2.5.0 والإحصائيات الجديدة
-
 
 class ExecutorBotClient:
-    """عميل للتواصل مع بوت التنفيذ"""
+    """عميل للتواصل مع بوت التنفيذ - النسخة المحدثة"""
     
     def __init__(self, base_url: str, api_key: str):
         self.base_url = base_url
@@ -1246,7 +1363,12 @@ class ExecutorBotClient:
             payload = {
                 "signal": signal_data,
                 "timestamp": time.time(),
-                "source": "top_bottom_scanner_v2.5"
+                "source": "top_bottom_scanner_v3.0",
+                "system_stats": {
+                    "conflict_penalties_applied": system_stats["conflict_penalties_applied"],
+                    "trend_alignment_applied": system_stats["trend_alignment_applied"],
+                    "enhanced_signals_sent": system_stats["enhanced_signals_sent"]
+                }
             }
             
             response = await self.client.post(
@@ -1282,7 +1404,7 @@ class ExecutorBotClient:
             payload = {
                 "heartbeat": True,
                 "timestamp": time.time(),
-                "source": "top_bottom_scanner_v2.5",
+                "source": "top_bottom_scanner_v3.0",
                 "syria_time": get_syria_time().strftime('%H:%M %d/%m/%Y'),
                 "system_stats": {
                     "total_scans": system_stats["total_scans"],
@@ -1293,8 +1415,14 @@ class ExecutorBotClient:
                     "enhanced_signals_sent": system_stats["enhanced_signals_sent"],
                     "confirmation_bonus_applied": system_stats["confirmation_bonus_applied"],
                     "relaxed_signals_sent": system_stats["relaxed_signals_sent"],
+                    "trend_alignment_applied": system_stats["trend_alignment_applied"],
+                    "conflict_penalties_applied": system_stats["conflict_penalties_applied"],
                     "last_scan_time": system_stats["last_scan_time"],
                     "executor_connected": system_stats["executor_connected"]
+                },
+                "enhanced_system": {
+                    "conflict_management": CONFLICT_MANAGEMENT,
+                    "indicator_weights": ENHANCED_INDICATOR_WEIGHTS
                 }
             }
             
@@ -1336,8 +1464,9 @@ class ExecutorBotClient:
     async def close(self):
         await self.client.aclose()
 
+
 class BinanceDataFetcher:
-    """جلب البيانات من Binance"""
+    """جلب البيانات من Binance - النسخة المحدثة"""
     
     def __init__(self):
         self.client = httpx.AsyncClient(timeout=30.0)
@@ -1384,8 +1513,14 @@ class BinanceDataFetcher:
             # تخزين في الكاش
             self.cache[cache_key] = {'data': result, 'timestamp': current_time}
             
-            safe_log_info(f"تم تحليل {coin_data['symbol']} ({timeframe}) - قمة: {analysis['top_score']} - قاع: {analysis['bottom_score']}", 
-                         coin_data['symbol'], "analyzer")
+            # تسجيل تفاصيل التحليل المحسن
+            if analysis.get('breakdown'):
+                breakdown = analysis['breakdown']
+                safe_log_info(f"تم تحليل {coin_data['symbol']} ({timeframe}) - النظام المحسن - قمة: {analysis['top_score']} - قاع: {analysis['bottom_score']} - تفصيل: {breakdown}", 
+                             coin_data['symbol'], "enhanced_analyzer")
+            else:
+                safe_log_info(f"تم تحليل {coin_data['symbol']} ({timeframe}) - قمة: {analysis['top_score']} - قاع: {analysis['bottom_score']}", 
+                             coin_data['symbol'], "analyzer")
             
             return result
                 
@@ -1428,8 +1563,11 @@ class BinanceDataFetcher:
 
     async def close(self):
         await self.client.aclose()
-      
-# التهيئة العالمية
+
+
+# =============================================================================
+# الوظائف المساعدة والمهام
+# =============================================================================
 
 async def prepare_trade_signal(coin_key: str, coin_data: Dict, timeframe: str, 
                              data: Dict, analysis: Dict) -> Optional[Dict[str, Any]]:
@@ -1441,10 +1579,10 @@ async def prepare_trade_signal(coin_key: str, coin_data: Dict, timeframe: str,
         # تحديد اتجاه الصفقة
         if signal_type == "top":
             action = "SELL"
-            reason = "إشارة قمة سعرية قوية"
+            reason = "إشارة قمة سعرية قوية - النظام المحسن v3.0"
         else:  # bottom
             action = "BUY" 
-            reason = "إشارة قاع سعري قوية"
+            reason = "إشارة قاع سعري قوية - النظام المحسن v3.0"
         
         # تحضير بيانات الإشارة
         signal_data = {
@@ -1458,18 +1596,21 @@ async def prepare_trade_signal(coin_key: str, coin_data: Dict, timeframe: str,
             "reason": reason,
             "analysis": {
                 "rsi": analysis["indicators"].get("rsi", 0),
-                "stoch_k": analysis["indicators"].get("stoch_k", 0),
-                "stoch_d": analysis["indicators"].get("stoch_d", 0),
-                "macd_histogram": analysis["indicators"].get("macd_histogram", 0),
-                "ema_20": analysis["indicators"].get("ema_20", 0),
-                "ema_50": analysis["indicators"].get("ema_50", 0),
+                "stoch_k": analysis["indicators"].get("stochastic", {}).get("k", 0),
+                "stoch_d": analysis["indicators"].get("stochastic", {}).get("d", 0),
+                "macd_histogram": analysis["indicators"].get("macd", {}).get("histogram", 0),
+                "ema_20": analysis["indicators"].get("moving_averages", {}).get("ema_20", 0),
+                "ema_50": analysis["indicators"].get("moving_averages", {}).get("ema_50", 0),
                 "candle_pattern": analysis["indicators"].get("candle_pattern", {}),
                 "volume_trend": analysis["indicators"].get("volume_trend", {}),
-                "session_weight": analysis["indicators"].get("session_weight", 1.0)
+                "session_weight": analysis.get("breakdown", {}).get("session_weight", 1.0),
+                "conflict_penalty": analysis.get("conflict_penalty_applied", 0)
             },
+            "breakdown": analysis.get("breakdown", {}),
             "timestamp": time.time(),
             "syria_time": get_syria_time().strftime('%H:%M %d/%m/%Y'),
-            "current_session": get_current_session()["name"]
+            "current_session": get_current_session()["name"],
+            "system_version": "3.0.0"
         }
         
         return signal_data
@@ -1478,79 +1619,174 @@ async def prepare_trade_signal(coin_key: str, coin_data: Dict, timeframe: str,
         safe_log_error(f"خطأ في تحضير إشارة التداول: {e}", coin_key, "signal_prep")
         return None
 
-async def health_check_task():
-    """مهمة الفحص الصحي"""
-    while True:
-        try:
-            # فحص بسيط للذاكرة والأداء
-            current_time = time.time()
-            cache_size = len(data_fetcher.cache)
-            current_session = get_current_session()
-            
-            # فحص اتصال البوت المنفذ
-            executor_health = await executor_client.health_check()
-            
-            safe_log_info(f"الفحص الصحي - الكاش: {cache_size} - الجلسة: {current_session['name']} - الوزن: {current_session['weight']} - المنفذ: {'متصل' if executor_health else 'غير متصل'} - إشارات مخففة: {system_stats['conflicting_signals_filtered']} - إشارات محسنة: {system_stats['enhanced_signals_sent']} - إشارات بفضل التخفيف: {system_stats['relaxed_signals_sent']}", 
-                         "system", "health")
-            
-            await asyncio.sleep(300)  # فحص كل 5 دقائق
-            
-        except Exception as e:
-            safe_log_error(f"خطأ في الفحص الصحي: {e}", "system", "health")
-            await asyncio.sleep(60)
 
-async def heartbeat_task():
-    """مهمة إرسال النبضات الدورية"""
-    safe_log_info("بدء مهمة النبضات الدورية كل 30 دقيقة", "system", "heartbeat")
-    
-    while True:
-        try:
-            # انتظار الفاصل الزمني المحدد
-            await asyncio.sleep(HEARTBEAT_INTERVAL)
+async def relaxed_confirmation_check(coin_data):
+    """نسخة محسنة من نظام التأكيد"""
+    try:
+        # الفحص في الإطار الرئيسي
+        primary_data = await data_fetcher.get_coin_data(coin_data, PRIMARY_TIMEFRAME)
+        primary_signal = primary_data['analysis']
+        
+        if (primary_signal['strongest_score'] < CONFIDENCE_THRESHOLD - 15 or
+            not primary_signal['alert_level']['send_alert']):
+            return None
+        
+        # الفحص في إطار التأكيد
+        confirmation_data = await data_fetcher.get_coin_data(coin_data, CONFIRMATION_TIMEFRAME)
+        confirmation_signal = confirmation_data['analysis']
+        
+        confirmation_conditions = (
+            primary_signal['strongest_signal'] == confirmation_signal['strongest_signal'] and
+            confirmation_signal['strongest_score'] >= CONFIRMATION_THRESHOLD and
+            abs(primary_signal['strongest_score'] - confirmation_signal['strongest_score']) >= MIN_CONFIRMATION_GAP
+        )
+        
+        if confirmation_conditions:
+            base_bonus = CONFIRMATION_BONUS
+            strength_bonus = min(8, confirmation_signal['strongest_score'] // 12)
+            total_bonus = base_bonus + strength_bonus
             
-            # إرسال النبضة
-            success = await notifier.send_heartbeat()
+            confirmed_score = min(95, primary_signal['strongest_score'] + total_bonus)
             
-            if success:
-                safe_log_info("تم إرسال النبضة بنجاح", "system", "heartbeat")
-            else:
-                safe_log_error("فشل إرسال النبضة", "system", "heartbeat")
-                
-        except Exception as e:
-            safe_log_error(f"خطأ في مهمة النبضات: {e}", "system", "heartbeat")
-            await asyncio.sleep(60)  # انتظار قصير عند الخطأ
+            safe_log_info(f"✅ إشارة مؤكدة محسنة لـ {coin_data['symbol']}: {primary_signal['strongest_score']} → {confirmed_score} نقطة (bonus: {total_bonus})", 
+                         coin_data['symbol'], "enhanced_confirmation")
+            
+            system_stats["confirmation_bonus_applied"] += 1
+            
+            return {
+                **primary_signal,
+                'strongest_score': confirmed_score,
+                'alert_level': get_alert_level(confirmed_score),
+                'confirmed': True,
+                'confirmation_score': confirmation_signal['strongest_score'],
+                'confirmation_bonus': total_bonus,
+                'price': primary_data['price'],
+                'prices': primary_data['prices'],
+                'highs': primary_data['highs'],
+                'lows': primary_data['lows'],
+                '_relaxed': True
+            }
+        
+        return None
+            
+    except Exception as e:
+        safe_log_error(f"خطأ في نظام التأكيد المحسن لـ {coin_data['symbol']}: {e}", coin_data['symbol'], "enhanced_confirmation")
+        return None
 
-async def executor_heartbeat_task():
-    """مهمة إرسال النبضات الدورية للبوت المنفذ"""
-    safe_log_info("بدء مهمة النبضات الدورية للبوت المنفذ كل ساعة", "system", "executor_heartbeat")
+
+def relaxed_conflict_filter(analysis: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """تصفية محسنة للإشارات المتضاربة"""
+    top_score = analysis["top_score"]
+    bottom_score = analysis["bottom_score"]
     
-    while True:
-        try:
-            # انتظار الفاصل الزمني المحدد
-            await asyncio.sleep(EXECUTOR_HEARTBEAT_INTERVAL)
-            
-            # إرسال النبضة
-            success = await executor_client.send_heartbeat()
-            
-            if success:
-                safe_log_info("✅ تم إرسال النبضة للبوت المنفذ بنجاح", "system", "executor_heartbeat")
+    score_gap = abs(top_score - bottom_score)
+    
+    if score_gap < MIN_SIGNAL_GAP:
+        if top_score > bottom_score:
+            adjusted_bottom = max(0, bottom_score - 8)
+            safe_log_info(f"⚠️  تخفيف إشارة متضاربة - قمة: {top_score}, قاع: {adjusted_bottom}, الفرق: {score_gap}", 
+                         "system", "relaxed_conflict_filter")
+            system_stats["conflicting_signals_filtered"] += 1
+            return {**analysis, "bottom_score": adjusted_bottom, "strongest_signal": "top", "strongest_score": top_score, "_relaxed": True}
+        else:
+            adjusted_top = max(0, top_score - 8)
+            safe_log_info(f"⚠️  تخفيف إشارة متضاربة - قمة: {adjusted_top}, قاع: {bottom_score}, الفرق: {score_gap}", 
+                         "system", "relaxed_conflict_filter")
+            system_stats["conflicting_signals_filtered"] += 1
+            return {**analysis, "top_score": adjusted_top, "strongest_signal": "bottom", "strongest_score": bottom_score, "_relaxed": True}
+    
+    if top_score > bottom_score:
+        enhanced_top = min(100, top_score + 2)
+        return {**analysis, "strongest_signal": "top", "strongest_score": enhanced_top}
+    else:
+        enhanced_bottom = min(100, bottom_score + 2)
+        return {**analysis, "strongest_signal": "bottom", "strongest_score": enhanced_bottom}
+
+
+def get_market_bias(prices: List[float]) -> str:
+    """تحديد الاتجاه العام للسوق"""
+    if len(prices) < 20:
+        return "neutral"
+    
+    short_trend = prices[-1] - prices[-5]
+    long_trend = prices[-1] - prices[-20]
+    
+    if short_trend > 0 and long_trend > 0:
+        return "bullish"
+    elif short_trend < 0 and long_trend < 0:
+        return "bearish"
+    else:
+        return "neutral"
+
+
+def apply_market_bias(analysis: Dict[str, Any], market_bias: str) -> Dict[str, Any]:
+    """تطبيق تحيز السوق على النتائج"""
+    if market_bias == "bullish":
+        analysis["top_score"] = max(0, analysis["top_score"] - 5)
+    elif market_bias == "bearish":
+        analysis["bottom_score"] = max(0, analysis["bottom_score"] - 5)
+    
+    if analysis["top_score"] > analysis["bottom_score"]:
+        analysis["strongest_signal"] = "top"
+        analysis["strongest_score"] = analysis["top_score"]
+    else:
+        analysis["strongest_signal"] = "bottom"
+        analysis["strongest_score"] = analysis["bottom_score"]
+    
+    analysis["alert_level"] = get_alert_level(analysis["strongest_score"])
+    
+    return analysis
+
+
+async def relaxed_enhanced_scan(coin_key, coin_data):
+    """مسح محسن يجمع كل التحسينات"""
+    try:
+        # استخدام نظام التأكيد المحسن
+        confirmed_signal = await relaxed_confirmation_check(coin_data)
+        
+        if not confirmed_signal:
+            return None
+        
+        # تطبيق تحليل الاتجاه
+        trend_analysis = data_fetcher.analyzer.simple_trend_analysis(confirmed_signal['prices'])
+        
+        # تطبيق التصفية المحسنة
+        final_signal = relaxed_conflict_filter(confirmed_signal)
+        
+        if final_signal and final_signal['alert_level']['send_alert']:
+            relaxed_bonus = final_signal.get('_relaxed', False)
+            if relaxed_bonus:
+                system_stats["relaxed_signals_sent"] += 1
+                safe_log_info(f"🎯 إشارة محسنة لـ {coin_data['symbol']}: {final_signal['strongest_score']} نقطة (بفضل النظام المحسن)", 
+                             coin_data['symbol'], "enhanced_scan")
             else:
-                safe_log_error("❌ فشل إرسال النبضة للبوت المنفذ", "system", "executor_heartbeat")
-                
-        except Exception as e:
-            safe_log_error(f"❌ خطأ في مهمة نبضات المنفذ: {e}", "system", "executor_heartbeat")
-            await asyncio.sleep(300)  # انتظار 5 دقائق عند الخطأ
-# المهام الأساسية المحدثة
+                safe_log_info(f"🎯 إشارة قوية لـ {coin_data['symbol']}: {final_signal['strongest_score']} نقطة", 
+                             coin_data['symbol'], "enhanced_scan")
+            
+            system_stats["enhanced_signals_sent"] += 1
+            return final_signal
+        
+        return None
+        
+    except Exception as e:
+        safe_log_error(f"خطأ في المسح المحسن لـ {coin_data['symbol']}: {e}", coin_data['symbol'], "enhanced_scan")
+        return None
+
+
+# =============================================================================
+# المهام الأساسية
+# =============================================================================
+
 async def market_scanner_task():
-    """المهمة الرئيسية للمسح الضوئي مع الشروط المخففة"""
-    safe_log_info("بدء مهمة مسح السوق كل 30 دقيقة مع الشروط المخففة", "system", "scanner")
+    """المهمة الرئيسية للمسح الضوئي مع النظام المحسن"""
+    safe_log_info("بدء مهمة مسح السوق كل 30 دقيقة مع النظام المحسن v3.0", "system", "scanner")
     
     while True:
         try:
             syria_time = get_syria_time()
             current_session = get_current_session()
             
-            safe_log_info(f"بدء دورة المسح - التوقيت السوري: {syria_time.strftime('%H:%M %d/%m/%Y')} - الجلسة: {current_session['name']}", 
+            safe_log_info(f"بدء دورة المسح - التوقيت السوري: {syria_time.strftime('%H:%M %d/%m/%Y')} - الجلسة: {current_session['name']} - النظام: v3.0", 
                          "system", "scanner")
             
             alerts_sent = 0
@@ -1558,7 +1794,7 @@ async def market_scanner_task():
             
             for coin_key, coin_data in SUPPORTED_COINS.items():
                 try:
-                    # استخدام النظام المخفف
+                    # استخدام النظام المحسن
                     enhanced_signal = await relaxed_enhanced_scan(coin_key, coin_data)
                     
                     if enhanced_signal:
@@ -1608,7 +1844,7 @@ async def market_scanner_task():
             system_stats["total_scans"] += 1
             system_stats["last_scan_time"] = syria_time.strftime('%H:%M %d/%m/%Y')
             
-            safe_log_info(f"اكتملت دورة المسح - تم إرسال {alerts_sent} تنبيه و {signals_sent} إشارة تنفيذ", 
+            safe_log_info(f"اكتملت دورة المسح - تم إرسال {alerts_sent} تنبيه و {signals_sent} إشارة تنفيذ - النظام v3.0", 
                          "system", "scanner")
             
             await asyncio.sleep(SCAN_INTERVAL)
@@ -1617,8 +1853,82 @@ async def market_scanner_task():
             safe_log_error(f"خطأ في المهمة الرئيسية: {e}", "system", "scanner")
             await asyncio.sleep(60)
 
-# باقي المهام (health_check_task, heartbeat_task, executor_heartbeat_task) تبقى كما هي
-# مع تحديث الرسائل لتشمل الإحصائيات الجديدة
+
+async def health_check_task():
+    """مهمة الفحص الصحي"""
+    while True:
+        try:
+            current_time = time.time()
+            cache_size = len(data_fetcher.cache)
+            current_session = get_current_session()
+            
+            executor_health = await executor_client.health_check()
+            
+            safe_log_info(f"الفحص الصحي - الكاش: {cache_size} - الجلسة: {current_session['name']} - الوزن: {current_session['weight']} - المنفذ: {'متصل' if executor_health else 'غير متصل'} - إشارات مخففة: {system_stats['conflicting_signals_filtered']} - إشارات محسنة: {system_stats['enhanced_signals_sent']} - إشارات بفضل التخفيف: {system_stats['relaxed_signals_sent']} - عقوبات تضارب: {system_stats['conflict_penalties_applied']}", 
+                         "system", "health")
+            
+            await asyncio.sleep(300)
+            
+        except Exception as e:
+            safe_log_error(f"خطأ في الفحص الصحي: {e}", "system", "health")
+            await asyncio.sleep(60)
+
+
+async def heartbeat_task():
+    """مهمة إرسال النبضات الدورية"""
+    safe_log_info("بدء مهمة النبضات الدورية كل 30 دقيقة - النظام v3.0", "system", "heartbeat")
+    
+    while True:
+        try:
+            await asyncio.sleep(HEARTBEAT_INTERVAL)
+            
+            success = await notifier.send_heartbeat()
+            
+            if success:
+                safe_log_info("تم إرسال النبضة بنجاح - النظام v3.0", "system", "heartbeat")
+            else:
+                safe_log_error("فشل إرسال النبضة", "system", "heartbeat")
+                
+        except Exception as e:
+            safe_log_error(f"خطأ في مهمة النبضات: {e}", "system", "heartbeat")
+            await asyncio.sleep(60)
+
+
+async def executor_heartbeat_task():
+    """مهمة إرسال النبضات الدورية للبوت المنفذ"""
+    safe_log_info("بدء مهمة النبضات الدورية للبوت المنفذ كل ساعة - النظام v3.0", "system", "executor_heartbeat")
+    
+    while True:
+        try:
+            await asyncio.sleep(EXECUTOR_HEARTBEAT_INTERVAL)
+            
+            success = await executor_client.send_heartbeat()
+            
+            if success:
+                safe_log_info("✅ تم إرسال النبضة للبوت المنفذ بنجاح - النظام v3.0", "system", "executor_heartbeat")
+            else:
+                safe_log_error("❌ فشل إرسال النبضة للبوت المنفذ", "system", "executor_heartbeat")
+                
+        except Exception as e:
+            safe_log_error(f"❌ خطأ في مهمة نبضات المنفذ: {e}", "system", "executor_heartbeat")
+            await asyncio.sleep(300)
+
+
+# =============================================================================
+# واجهات API
+# =============================================================================
+
+@app.get("/")
+async def root():
+    return {
+        "message": "Crypto Top/Bottom Scanner - النظام المحسن v3.0",
+        "version": "3.0.0",
+        "status": "running",
+        "enhanced_system": True,
+        "conflict_reduction": True,
+        "syria_time": get_syria_time().strftime('%H:%M %d/%m/%Y')
+    }
+
 
 @app.get("/scan/{coin}")
 async def scan_coin(coin: str, timeframe: str = "15m"):
@@ -1636,8 +1946,10 @@ async def scan_coin(coin: str, timeframe: str = "15m"):
         "price": data['price'],
         "analysis": data['analysis'],
         "syria_time": get_syria_time().strftime('%H:%M %d/%m/%Y'),
-        "current_session": get_current_session()["name"]
+        "current_session": get_current_session()["name"],
+        "system_version": "3.0.0"
     }
+
 
 @app.get("/session-info")
 async def get_session_info():
@@ -1649,12 +1961,12 @@ async def get_session_info():
         "all_sessions": TRADING_SESSIONS
     }
 
+
 @app.get("/system-stats")
 async def get_system_stats():
     """الحصول على إحصائيات النظام"""
     uptime_seconds = time.time() - system_stats["start_time"]
     
-    # تنسيق مدة التشغيل
     days = int(uptime_seconds // 86400)
     hours = int((uptime_seconds % 86400) // 3600)
     minutes = int((uptime_seconds % 3600) // 60)
@@ -1679,37 +1991,44 @@ async def get_system_stats():
         "conflicting_signals_filtered": system_stats["conflicting_signals_filtered"],
         "enhanced_signals_sent": system_stats["enhanced_signals_sent"],
         "confirmation_bonus_applied": system_stats["confirmation_bonus_applied"],
-        "relaxed_signals_sent": system_stats["relaxed_signals_sent"]
+        "relaxed_signals_sent": system_stats["relaxed_signals_sent"],
+        "trend_alignment_applied": system_stats["trend_alignment_applied"],
+        "conflict_penalties_applied": system_stats["conflict_penalties_applied"],
+        "enhanced_system": {
+            "conflict_management": CONFLICT_MANAGEMENT,
+            "indicator_weights": ENHANCED_INDICATOR_WEIGHTS,
+            "version": "3.0.0"
+        }
     }
+
 
 @app.get("/test-telegram")
 async def test_telegram():
     """اختبار إرسال رسالة تجريبية للتليجرام"""
     try:
         test_message = """
-🧪 *اختبار البوت - ماسح القمم والقيعان v2.5*
+🧪 *اختبار البوت - ماسح القمم والقيعان v3.0*
 
-✅ *الحالة:* البوت يعمل بشكل صحيح مع الشروط المخففة
+✅ *الحالة:* البوت يعمل بشكل صحيح مع النظام المحسن
 🕒 *الوقت:* {}
 🌍 *الجلسة:* {} {}
-⚡ *الإصدار:* 2.5.0
+⚡ *الإصدار:* 3.0.0 - النظام المحسن
 
 📊 *العملات المدعومة:* {}
 ⏰ *الأطر الزمنية:* {}
 
-🔧 *الإعدادات المخففة:*
-• عتبة الثقة: {} نقطة (إشارات أكثر)
-• عتبة التأكيد: {} نقطة
-• فاصل المسح: {} ثانية
-• فاصل النبضات: {} ثانية
-• فاصل نبضات المنفذ: {} ثانية
-• التوقيت: سوريا (GMT+3)
-• تنفيذ الصفقات: {}
-• اتصال المنفذ: {}
-• تصفية الإشارات المتضاربة: {} نقطة فرق
-• نظام التأكيد المخفف: {} نقطة bonus
+🔧 *الإعدادات المحسنة:*
+• نظام الأوزان المتطور: `مفعل`
+• إدارة التضارب المحسنة: `مفعل` 
+• محاذاة الاتجاه: `مفعل`
+• تأكيد الحجم: `مفعل`
+• عتبة الثقة: `{} نقطة`
+• فاصل المسح: `{} ثانية`
+• التوقيت: `سوريا (GMT+3)`
+• تنفيذ الصفقات: `{}`
+• اتصال المنفذ: `{}`
 
-🎯 *الوظيفة:* كشف القمم والقيعان تلقائياً مع الشروط المخففة
+🎯 *الوظيفة:* كشف القمم والقيعان تلقائياً مع النظام المحسن لتقليل التضارب
         """.format(
             get_syria_time().strftime('%H:%M %d/%m/%Y'),
             get_current_session()["emoji"],
@@ -1717,14 +2036,9 @@ async def test_telegram():
             ", ".join(SUPPORTED_COINS.keys()),
             ", ".join(TIMEFRAMES),
             CONFIDENCE_THRESHOLD,
-            CONFIRMATION_THRESHOLD,
             SCAN_INTERVAL,
-            HEARTBEAT_INTERVAL,
-            EXECUTOR_HEARTBEAT_INTERVAL,
             "مفعل" if EXECUTE_TRADES else "معطل",
-            "متصل" if system_stats["executor_connected"] else "غير متصل",
-            MIN_SIGNAL_GAP,
-            CONFIRMATION_BONUS
+            "متصل" if system_stats["executor_connected"] else "غير متصل"
         )
 
         async with httpx.AsyncClient() as client:
@@ -1738,12 +2052,13 @@ async def test_telegram():
                                        json=payload, timeout=10.0)
             
             if response.status_code == 200:
-                return {"status": "success", "message": "تم إرسال رسالة الاختبار بنجاح"}
+                return {"status": "success", "message": "تم إرسال رسالة الاختبار بنجاح", "system": "v3.0"}
             else:
                 return {"status": "error", "code": response.status_code, "details": response.text}
                 
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
 
 @app.get("/send-heartbeat")
 async def send_heartbeat_manual():
@@ -1751,11 +2066,12 @@ async def send_heartbeat_manual():
     try:
         success = await notifier.send_heartbeat()
         if success:
-            return {"status": "success", "message": "تم إرسال النبضة بنجاح"}
+            return {"status": "success", "message": "تم إرسال النبضة بنجاح", "system": "v3.0"}
         else:
             return {"status": "error", "message": "فشل إرسال النبضة"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
 
 @app.get("/test-executor")
 async def test_executor_connection():
@@ -1769,11 +2085,13 @@ async def test_executor_connection():
             "executor_connected": is_healthy,
             "executor_url": EXECUTOR_BOT_URL,
             "trade_execution_enabled": EXECUTE_TRADES,
+            "system_version": "3.0.0",
             "message": "البوت المنفذ متصل" if is_healthy else "البوت المنفذ غير متصل"
         }
     except Exception as e:
         system_stats["executor_connected"] = False
         return {"status": "error", "message": str(e)}
+
 
 @app.get("/test-executor-heartbeat")
 async def test_executor_heartbeat():
@@ -1787,6 +2105,7 @@ async def test_executor_heartbeat():
                 "executor_connected": system_stats["executor_connected"],
                 "total_heartbeats_sent": system_stats["total_heartbeats_sent"],
                 "last_executor_heartbeat": system_stats["last_executor_heartbeat"],
+                "system_version": "3.0.0",
                 "timestamp": get_syria_time().strftime('%H:%M %d/%m/%Y')
             }
         else:
@@ -1794,11 +2113,17 @@ async def test_executor_heartbeat():
                 "status": "error", 
                 "message": "فشل إرسال النبضة للبوت المنفذ",
                 "executor_connected": system_stats["executor_connected"],
+                "system_version": "3.0.0",
                 "timestamp": get_syria_time().strftime('%H:%M %d/%m/%Y')
             }
     except Exception as e:
         return {"status": "error", "message": str(e)}
-        
+
+
+# =============================================================================
+# التهيئة وتشغيل التطبيق
+# =============================================================================
+
 # التهيئة العالمية
 data_fetcher = BinanceDataFetcher()
 notifier = TelegramNotifier(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
@@ -1809,18 +2134,19 @@ start_time = time.time()
 
 @app.on_event("startup")
 async def startup_event():
-    safe_log_info("بدء تشغيل ماسح القمم والقيعان الإصدار 2.5 مع الشروط المخففة", "system", "startup")
+    safe_log_info("بدء تشغيل ماسح القمم والقيعان الإصدار 3.0 مع النظام المحسن", "system", "startup")
     safe_log_info(f"العملات المدعومة: {list(SUPPORTED_COINS.keys())}", "system", "config")
     safe_log_info(f"الأطر الزمنية: {TIMEFRAMES}", "system", "config")
     safe_log_info(f"فاصل المسح: {SCAN_INTERVAL} ثانية", "system", "config")
     safe_log_info(f"فاصل النبضات: {HEARTBEAT_INTERVAL} ثانية", "system", "config")
     safe_log_info(f"فاصل نبضات المنفذ: {EXECUTOR_HEARTBEAT_INTERVAL} ثانية", "system", "config")
-    safe_log_info(f"حد الثقة المخفف: {CONFIDENCE_THRESHOLD} نقطة", "system", "config")
+    safe_log_info(f"حد الثقة المحسن: {CONFIDENCE_THRESHOLD} نقطة", "system", "config")
     safe_log_info(f"التوقيت: سوريا (GMT+3)", "system", "config")
     safe_log_info(f"تنفيذ الصفقات: {'مفعل' if EXECUTE_TRADES else 'معطل'}", "system", "config")
     safe_log_info(f"رابط البوت المنفذ: {EXECUTOR_BOT_URL}", "system", "config")
-    safe_log_info(f"تصفية الإشارات المتضاربة المخففة: فرق {MIN_SIGNAL_GAP} نقطة على الأقل", "system", "config")
-    safe_log_info(f"نظام التأكيد المخفف: {CONFIRMATION_BONUS} نقطة bonus", "system", "config")
+    safe_log_info(f"نظام الأوزان المحسن: مفعل", "system", "config")
+    safe_log_info(f"إدارة التضارب المحسنة: {CONFLICT_MANAGEMENT['ENABLE_ENHANCED_FILTERING']}", "system", "config")
+    safe_log_info(f"محاذاة الاتجاه: {CONFLICT_MANAGEMENT['TREND_ALIGNMENT_BONUS']}", "system", "config")
     
     # فحص اتصال البوت المنفذ
     executor_health = await executor_client.health_check()
@@ -1832,11 +2158,11 @@ async def startup_event():
     asyncio.create_task(heartbeat_task())
     asyncio.create_task(executor_heartbeat_task())
     
-    safe_log_info("✅ بدأت مهام المسح والفحص الصحي والنبضات مع الشروط المخففة", "system", "startup")
+    safe_log_info("✅ بدأت مهام المسح والفحص الصحي والنبضات مع النظام المحسن v3.0", "system", "startup")
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    safe_log_info("إيقاف ماسح السوق", "system", "shutdown")
+    safe_log_info("إيقاف ماسح السوق - النظام المحسن v3.0", "system", "shutdown")
     await data_fetcher.close()
     await executor_client.close()
 
