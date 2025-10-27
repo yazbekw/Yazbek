@@ -131,7 +131,7 @@ TRADING_SESSIONS = {
 
 # مستويات التنبيه المحسنة
 ALERT_LEVELS = {
-    "LOW": {"min": 0, "max": 35, "emoji": "⚪", "send_alert": False, "color": "gray"},
+    "LOW": {"min": 0, "max": 35, "emoji": "⚪", "send_alert": True, "color": "gray"},
     "MEDIUM": {"min": 36, "max": 49, "emoji": "🟡", "send_alert": True, "color": "gold"},
     "HIGH": {"min": 50, "max": 65, "emoji": "🟠", "send_alert": True, "color": "darkorange"},
     "STRONG": {"min": 66, "max": 80, "emoji": "🔴", "send_alert": True, "color": "red"},
@@ -1157,8 +1157,12 @@ class TelegramNotifier:
         alert_level = analysis["alert_level"]
         strongest_signal = analysis["strongest_signal"]
         strongest_score = analysis["strongest_score"]
-        
+
+        safe_log_info(f"🔔 فحص الإرسال - نقاط: {strongest_score}, عتبة: {CONFIDENCE_THRESHOLD}, send_alert: {alert_level['send_alert']}", 
+                     coin, "send_alert_check")                   
         if not alert_level["send_alert"] or strongest_score < CONFIDENCE_THRESHOLD:
+            safe_log_info(f"❌ تم رفض الإرسال - send_alert: {alert_level['send_alert']}, النقاط < العتبة: {strongest_score} < {CONFIDENCE_THRESHOLD}", 
+                         coin, "send_alert_rejected")
             return False
         
         try:
