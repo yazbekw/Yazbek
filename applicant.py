@@ -664,7 +664,7 @@ class SimpleSignalReceiver:
         
         # 🔄 تحديث: التحقق من درجة الثقة لتكون 50 بدلاً من 41
         confidence_score = signal_data['confidence_score']
-        if confidence_score < 50:  # ⬅️ تغيير من 41 إلى 50
+        if confidence_score < 25:  # ⬅️ تغيير من 41 إلى 50
             logger.error(f"❌ درجة ثقة غير كافية: {confidence_score}% - الحد الأدنى 50%")
             return False
         
@@ -684,7 +684,7 @@ def convert_signal_format(signal_data):
         
         # 🔄 التحقق من عتبة الثقة أولاً
         confidence_score = signal_data.get('confidence_score', 0)
-        if confidence_score < 50:  # ⬅️ تحديث العتبة
+        if confidence_score < 25:  # ⬅️ تحديث العتبة
             logger.error(f"❌ درجة ثقة غير كافية في التحويل: {confidence_score}% - الحد الأدنى 50%")
             return None
         
