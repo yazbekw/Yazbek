@@ -631,120 +631,141 @@ class AdvancedMarketAnalyzer:
         }
 
     def _calculate_momentum_scores(self, indicators: Dict) -> Dict[str, int]:
-        """حساب نقاط الزخم مع النظام الجديد"""
+        """تحسين حساب نقاط الزخم لاستغلال النطاق الكامل (35 نقطة)"""
         top_score = 0
         bottom_score = 0
-        
+    
         rsi = indicators.get('rsi', 50)
         stoch = indicators.get('stochastic', {'k': 50, 'd': 50})
         macd = indicators.get('macd', {'histogram': 0})
-        
-        # RSI (12 نقطة)
-        if rsi > 75: top_score += 8
-        elif rsi > 65: top_score += 5
-        elif rsi > 55: top_score += 2
-        
-        if rsi < 25: bottom_score += 8
-        elif rsi < 35: bottom_score += 5
-        elif rsi < 45: bottom_score += 2
-        
-        # Stochastic (10 نقاط)
+    
+        # RSI (12 نقطة كحد أقصى)
+        if rsi > 80: top_score += 12
+        elif rsi > 75: top_score += 9
+        elif rsi > 70: top_score += 6
+        elif rsi > 65: top_score += 3
+    
+        if rsi < 20: bottom_score += 12
+        elif rsi < 25: bottom_score += 9
+        elif rsi < 30: bottom_score += 6
+        elif rsi < 35: bottom_score += 3
+    
+        # Stochastic (12 نقطة كحد أقصى)
         stoch_k = stoch.get('k', 50)
-        if stoch_k > 80: top_score += 6
-        elif stoch_k > 70: top_score += 4
-        elif stoch_k > 60: top_score += 2
-        
-        if stoch_k < 20: bottom_score += 6
-        elif stoch_k < 30: bottom_score += 4
-        elif stoch_k < 40: bottom_score += 2
-        
-        # MACD (13 نقطة)
+        stoch_d = stoch.get('d', 50)
+    
+        if stoch_k > 85 and stoch_d > 85: top_score += 12
+        elif stoch_k > 80 and stoch_d > 80: top_score += 9
+        elif stoch_k > 75 and stoch_d > 75: top_score += 6
+        elif stoch_k > 70 and stoch_d > 70: top_score += 3
+    
+        if stoch_k < 15 and stoch_d < 15: bottom_score += 12
+        elif stoch_k < 20 and stoch_d < 20: bottom_score += 9
+        elif stoch_k < 25 and stoch_d < 25: bottom_score += 6
+        elif stoch_k < 30 and stoch_d < 30: bottom_score += 3
+    
+        # MACD (11 نقطة كحد أقصى)
         macd_hist = macd.get('histogram', 0)
-        if macd_hist < -0.015: top_score += 8
+        if macd_hist < -0.025: top_score += 11
+        elif macd_hist < -0.015: top_score += 8
         elif macd_hist < -0.008: top_score += 5
         elif macd_hist < 0: top_score += 2
-        
-        if macd_hist > 0.015: bottom_score += 8
+    
+        if macd_hist > 0.025: bottom_score += 11
+        elif macd_hist > 0.015: bottom_score += 8
         elif macd_hist > 0.008: bottom_score += 5
         elif macd_hist > 0: bottom_score += 2
-        
-        return {"top": top_score, "bottom": bottom_score}
-
+    
+        return {"top": min(top_score, 35), "bottom": min(bottom_score, 35)}
+    
     def _calculate_price_action_scores(self, indicators: Dict, current_price: float) -> Dict[str, int]:
-        """حساب نقاط حركة السعر مع النظام الجديد"""
+        """تحسين حساب نقاط حركة السعر (30 نقطة)"""
         top_score = 0
         bottom_score = 0
-        
+    
         candle_pattern = indicators.get('candle_pattern', {})
         moving_averages = indicators.get('moving_averages', {})
-        
+        trend_analysis = indicators.get('trend_analysis', {})
+    
         # أنماط الشموع (15 نقطة)
         if candle_pattern.get('direction') == "top":
-            top_score += min(15, candle_pattern.get('strength', 0))
+            top_score += min(15, candle_pattern.get('strength', 0) * 2)  # تضاعف القوة
         elif candle_pattern.get('direction') == "bottom":
-            bottom_score += min(15, candle_pattern.get('strength', 0))
-        
+            bottom_score += min(15, candle_pattern.get('strength', 0) * 2)
+    
         # المتوسطات المتحركة (10 نقاط)
         ema_20 = moving_averages.get('ema_20', current_price)
         ema_50 = moving_averages.get('ema_50', current_price)
-        
+    
         if current_price < ema_20 and current_price < ema_50:
-            top_score += 8
+            top_score += 10
         elif current_price < ema_20:
-            top_score += 4
-        
+            top_score += 6
+        elif current_price < ema_50:
+            top_score += 3
+    
         if current_price > ema_20 and current_price > ema_50:
-            bottom_score += 8
+            bottom_score += 10
         elif current_price > ema_20:
-            bottom_score += 4
-        
+            bottom_score += 6
+        elif current_price > ema_50:
+            bottom_score += 3
+    
         # قوة الاتجاه (5 نقاط)
-        trend_data = indicators.get('trend_analysis', {})
-        trend_strength = trend_data.get('strength', 0)
-        if trend_data.get('trend') == "bearish":
-            top_score += min(5, trend_strength // 2)
-        elif trend_data.get('trend') == "bullish":
-            bottom_score += min(5, trend_strength // 2)
-        
-        return {"top": top_score, "bottom": bottom_score}
-
+        trend_strength = trend_analysis.get('strength', 0)
+        if trend_analysis.get('trend') == "bearish":
+            top_score += min(5, trend_strength)
+        elif trend_analysis.get('trend') == "bullish":
+            bottom_score += min(5, trend_strength)
+    
+        return {"top": min(top_score, 30), "bottom": min(bottom_score, 30)}
+    
     def _calculate_key_levels_scores(self, indicators: Dict) -> Dict[str, int]:
-        """حساب نقاط المستويات الرئيسية مع النظام الجديد"""
+        """تحسين حساب نقاط المستويات الرئيسية (25 نقطة)"""
         top_score = 0
         bottom_score = 0
-        
+    
         support_resistance = indicators.get('support_resistance', {})
         fibonacci = indicators.get('fibonacci', {})
-        
+        pivot_points = indicators.get('pivot_points', {})
+    
         # الدعم والمقاومة (15 نقطة)
+        sr_strength = support_resistance.get('strength', 0)
         if support_resistance.get('direction') == "top":
-            top_score += support_resistance.get('strength', 0)
+            top_score += min(15, sr_strength * 2)  # تضاعف القوة
         elif support_resistance.get('direction') == "bottom":
-            bottom_score += support_resistance.get('strength', 0)
-        
+            bottom_score += min(15, sr_strength * 2)
+    
         # فيبوناتشي (7 نقاط)
         fib_strength = fibonacci.get('strength', 0)
         fib_level = fibonacci.get('closest_level')
-        
-        if fib_level in ['0.618', '0.786', '1.0']:
-            top_score += fib_strength
-        elif fib_level in ['0.0', '0.236', '0.382']:
-            bottom_score += fib_strength
-        
+    
+        if fib_level in ['0.618', '0.786', '1.0'] and fib_strength > 0:
+            top_score += min(7, fib_strength + 3)  # تعزيز مستويات المقاومة
+        elif fib_level in ['0.0', '0.236', '0.382'] and fib_strength > 0:
+            bottom_score += min(7, fib_strength + 3)  # تعزيز مستويات الدعم
+    
         # نقاط المحور (3 نقاط)
-        pivot_data = indicators.get('pivot_points', {})
         current_price = support_resistance.get('current_price', 0)
-        if pivot_data:
-            r1 = pivot_data.get('r1', current_price)
-            s1 = pivot_data.get('s1', current_price)
-            
-            if abs(current_price - r1) / current_price < 0.01:
-                top_score += 2
-            if abs(current_price - s1) / current_price < 0.01:
-                bottom_score += 2
+        if pivot_points:
+            r1 = pivot_points.get('r1', current_price)
+            s1 = pivot_points.get('s1', current_price)
         
-        return {"top": top_score, "bottom": bottom_score}
-
+            distance_to_r1 = abs(current_price - r1) / current_price
+            distance_to_s1 = abs(current_price - s1) / current_price
+        
+            if distance_to_r1 < 0.01:  # قرب المقاومة
+                top_score += 3
+            elif distance_to_r1 < 0.02:
+                top_score += 2
+        
+            if distance_to_s1 < 0.01:  # قرب الدعم
+                bottom_score += 3
+            elif distance_to_s1 < 0.02:
+                bottom_score += 2
+    
+        return {"top": min(top_score, 25), "bottom": min(bottom_score, 25)}
+    
     def _calculate_volume_scores(self, indicators: Dict, signal_type: str) -> Dict[str, int]:
         """حساب نقاط الحجم مع النظام الجديد"""
         top_score = 0
