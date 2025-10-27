@@ -34,7 +34,7 @@ EXECUTE_TRADES = os.getenv("EXECUTE_TRADES", "false").lower() == "true"
 SCAN_INTERVAL = 900  # 30 دقيقة بين كل فحص
 HEARTBEAT_INTERVAL = 1800  # 30 دقيقة بين كل نبضة
 EXECUTOR_HEARTBEAT_INTERVAL = 3600  # ساعة بين كل نبضة للمنفذ
-CONFIDENCE_THRESHOLD = 25  # عتبة الثقة الأساسية
+CONFIDENCE_THRESHOLD = 18  # عتبة الثقة الأساسية
 
 # =============================================================================
 # النظام المحسن للأوزان وتقليل التضارب
@@ -1831,6 +1831,8 @@ async def relaxed_confirmation_check(coin_data):
 
 def relaxed_conflict_filter(analysis: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """إصدار مع تسجيل مفصل"""
+    safe_log_info(f"🔍 قبل التصفية - قمة: {analysis.get('top_score')}, قاع: {analysis.get('bottom_score')}", 
+                 "system", "before_filter")
     original_top = analysis["top_score"]
     original_bottom = analysis["bottom_score"]
     
