@@ -767,39 +767,70 @@ class AdvancedMarketAnalyzer:
         return {"top": top_score, "bottom": bottom_score}
 
     def calculate_enhanced_scores(self, indicators: Dict, current_price: float, prices: List[float], signal_type: str) -> Dict[str, Any]:
-        """حساب النقاط مع النظام الجديد المحسن"""
+        """نظام حساب محسن يستغل كامل النقاط بشكل صحيح"""
+    
+        try:
+            # حساب النقاط من كل قسم
+            momentum_scores = self._calculate_momentum_scores(indicators)
+            price_action_scores = self._calculate_price_action_scores(indicators, current_price)
+            key_levels_scores = self._calculate_key_levels_scores(indicators)
+            volume_scores = self._calculate_volume_scores(indicators, signal_type)
+            trend_scores = self._calculate_trend_alignment_scores(prices)
         
-        # حساب النقاط من كل قسم
-        momentum_scores = self._calculate_momentum_scores(indicators)
-        price_action_scores = self._calculate_price_action_scores(indicators, current_price)
-        key_levels_scores = self._calculate_key_levels_scores(indicators)
-        volume_scores = self._calculate_volume_scores(indicators, signal_type)
-        trend_scores = self._calculate_trend_alignment_scores(prices)
+            # تجميع النقاط الأساسية (الحد الأقصى النظري = 130 نقطة)
+            base_top_score = (momentum_scores["top"] + price_action_scores["top"] + 
+                             key_levels_scores["top"] + volume_scores["top"] + trend_scores["top"])
         
-        # تجميع النقاط
-        base_top_score = (momentum_scores["top"] + price_action_scores["top"] + 
-                         key_levels_scores["top"] + volume_scores["top"] + trend_scores["top"])
+            base_bottom_score = (momentum_scores["bottom"] + price_action_scores["bottom"] + 
+                               key_levels_scores["bottom"] + volume_scores["bottom"] + trend_scores["bottom"])
         
-        base_bottom_score = (momentum_scores["bottom"] + price_action_scores["bottom"] + 
-                           key_levels_scores["bottom"] + volume_scores["bottom"] + trend_scores["bottom"])
+            # تحويل النقاط إلى مقياس 0-100 مع استغلال كامل النطاق
+            max_possible_score = 130  # 35+30+25+25+15
         
-        # تطبيق وزن الجلسة
-        session_weight = get_session_weight()
-        final_top_score = int(base_top_score * session_weight)
-        final_bottom_score = int(base_bottom_score * session_weight)
+            scaled_top_score = int((base_top_score / max_possible_score) * 100)
+            scaled_bottom_score = int((base_bottom_score / max_possible_score) * 100)
         
-        return {
-            "top_score": min(final_top_score, 100),
-            "bottom_score": min(final_bottom_score, 100),
-            "breakdown": {
-                "momentum": momentum_scores,
-                "price_action": price_action_scores,
-                "key_levels": key_levels_scores,
-                "volume": volume_scores,
-                "trend_alignment": trend_scores,
-                "session_weight": session_weight
+            # تطبيق وزن الجلسة على النتيجة المحولة
+            session_weight = get_session_weight()
+            final_top_score = int(scaled_top_score * session_weight)
+            final_bottom_score = int(scaled_bottom_score * session_weight)
+        
+            # تسجيل تفاصيل الحساب للتتبع
+            safe_log_info(f"حساب النقاط المحسن - قاعدة: قمة={base_top_score}, قاع={base_bottom_score} -> محولة: قمة={scaled_top_score}, قاع={scaled_bottom_score} -> نهائية: قمة={final_top_score}, قاع={final_bottom_score} (وزن الجلسة: {session_weight})", 
+                         "system", "score_calculation")
+        
+            return {
+                "top_score": min(final_top_score, 100),
+                "bottom_score": min(final_bottom_score, 100),
+                "breakdown": {
+                    "momentum": momentum_scores,
+                    "price_action": price_action_scores,
+                    "key_levels": key_levels_scores,
+                    "volume": volume_scores,
+                    "trend_alignment": trend_scores,
+                    "session_weight": session_weight,
+                    "base_scores": {
+                        "top": base_top_score,
+                        "bottom": base_bottom_score,
+                        "max_possible": max_possible_score
+                    },
+                    "scaled_scores": {
+                        "top": scaled_top_score,
+                        "bottom": scaled_bottom_score
+                    }
+                }
             }
-        }
+        
+        except Exception as e:
+            safe_log_error(f"خطأ في حساب النقاط المحسن: {e}", "system", "score_calculation")
+            return {
+                "top_score": 0,
+                "bottom_score": 0,
+                "breakdown": {}
+            }
+        
+    
+        
 
     def enhanced_conflict_filter(self, analysis: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """مرشح تضارب محسن يعتمد على النظام الجديد"""
