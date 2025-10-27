@@ -131,11 +131,11 @@ TRADING_SESSIONS = {
 
 # مستويات التنبيه المحسنة
 ALERT_LEVELS = {
-    "LOW": {"min": 0, "max": 35, "emoji": "⚪", "send_alert": True, "color": "gray"},
-    "MEDIUM": {"min": 36, "max": 49, "emoji": "🟡", "send_alert": True, "color": "gold"},
-    "HIGH": {"min": 50, "max": 65, "emoji": "🟠", "send_alert": True, "color": "darkorange"},
-    "STRONG": {"min": 66, "max": 80, "emoji": "🔴", "send_alert": True, "color": "red"},
-    "EXTREME": {"min": 81, "max": 100, "emoji": "💥", "send_alert": True, "color": "darkred"}
+    "LOW": {"min": 0, "max": 19, "send_alert": False, "emoji": "⚪", "color": "gray"},
+    "MEDIUM": {"min": 20, "max": 49, "send_alert": True, "emoji": "🟡", "color": "gold"}, 
+    "HIGH": {"min": 50, "max": 65, "send_alert": True, "emoji": "🟠", "color": "darkorange"},
+    "STRONG": {"min": 66, "max": 80, "send_alert": True, "emoji": "🔴", "color": "red"},
+    "EXTREME": {"min": 81, "max": 100, "send_alert": True, "emoji": "💥", "color": "darkred"}
 }
 
 # ألوان التصميم
