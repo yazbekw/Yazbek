@@ -257,11 +257,11 @@ class MultiLevelTradeExecutor:
     
     def get_trade_level(self, confidence_score):
         """تحديد مستوى التداول بناء على درجة الثقة - محدث"""
-        if confidence_score >= 81:
+        if confidence_score >= 65:
             return 'LEVEL_3'
-        elif confidence_score >= 66:
+        elif confidence_score >= 50:
             return 'LEVEL_2'
-        elif confidence_score >= 50:  # ⬅️ تغيير من 41 إلى 50
+        elif confidence_score >= 25:  # ⬅️ تغيير من 41 إلى 50
             return 'LEVEL_1'
         else:
             return None
