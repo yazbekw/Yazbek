@@ -34,7 +34,7 @@ EXECUTE_TRADES = os.getenv("EXECUTE_TRADES", "false").lower() == "true"
 SCAN_INTERVAL = 900  # 30 دقيقة بين كل فحص
 HEARTBEAT_INTERVAL = 1800  # 30 دقيقة بين كل نبضة
 EXECUTOR_HEARTBEAT_INTERVAL = 3600  # ساعة بين كل نبضة للمنفذ
-CONFIDENCE_THRESHOLD = 30  # عتبة الثقة الأساسية
+CONFIDENCE_THRESHOLD = 25  # عتبة الثقة الأساسية
 
 # =============================================================================
 # النظام المحسن للأوزان وتقليل التضارب
@@ -1830,33 +1830,31 @@ async def relaxed_confirmation_check(coin_data):
 
 
 def relaxed_conflict_filter(analysis: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """تصفية محسنة للإشارات المتضاربة"""
+    """إصدار مع تسجيل مفصل"""
+    original_top = analysis["top_score"]
+    original_bottom = analysis["bottom_score"]
+    
     top_score = analysis["top_score"]
     bottom_score = analysis["bottom_score"]
-    
     score_gap = abs(top_score - bottom_score)
+    
+    safe_log_info(f"🔍 قبل التصفية - قمة: {top_score}, قاع: {bottom_score}, الفرق: {score_gap}", 
+                 "system", "conflict_filter")
     
     if score_gap < MIN_SIGNAL_GAP:
         if top_score > bottom_score:
             adjusted_bottom = max(0, bottom_score - 8)
-            safe_log_info(f"⚠️  تخفيف إشارة متضاربة - قمة: {top_score}, قاع: {adjusted_bottom}, الفرق: {score_gap}", 
-                         "system", "relaxed_conflict_filter")
-            system_stats["conflicting_signals_filtered"] += 1
-            return {**analysis, "bottom_score": adjusted_bottom, "strongest_signal": "top", "strongest_score": top_score, "_relaxed": True}
+            result = {**analysis, "bottom_score": adjusted_bottom, "strongest_signal": "top", "strongest_score": top_score, "_relaxed": True}
+            safe_log_info(f"🔄 خصم قاع - قبل: {bottom_score}, بعد: {adjusted_bottom}", "system", "conflict_filter")
+            return result
         else:
             adjusted_top = max(0, top_score - 8)
-            safe_log_info(f"⚠️  تخفيف إشارة متضاربة - قمة: {adjusted_top}, قاع: {bottom_score}, الفرق: {score_gap}", 
-                         "system", "relaxed_conflict_filter")
-            system_stats["conflicting_signals_filtered"] += 1
-            return {**analysis, "top_score": adjusted_top, "strongest_signal": "bottom", "strongest_score": bottom_score, "_relaxed": True}
+            result = {**analysis, "top_score": adjusted_top, "strongest_signal": "bottom", "strongest_score": bottom_score, "_relaxed": True}
+            safe_log_info(f"🔄 خصم قمة - قبل: {top_score}, بعد: {adjusted_top}", "system", "conflict_filter")
+            return result
     
-    if top_score > bottom_score:
-        enhanced_top = min(100, top_score + 2)
-        return {**analysis, "strongest_signal": "top", "strongest_score": enhanced_top}
-    else:
-        enhanced_bottom = min(100, bottom_score + 2)
-        return {**analysis, "strongest_signal": "bottom", "strongest_score": enhanced_bottom}
-
+    safe_log_info(f"✅ لا تعديل مطلوب - الفرق كافٍ: {score_gap}", "system", "conflict_filter")
+    return analysis
 
 def get_market_bias(prices: List[float]) -> str:
     """تحديد الاتجاه العام للسوق"""
