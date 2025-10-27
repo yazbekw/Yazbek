@@ -562,14 +562,30 @@ class AdvancedMarketAnalyzer:
         """تحليل هيكل السوق"""
         if len(prices) < 20:
             return "neutral"
-        
+    
         # تحليل القمم والقيعان
-        highs = [max(prices[i-3:i+1]) for i in range(3, len(prices)-3)]
-        lows = [min(prices[i-3:i+1]) for i in range(3, len(prices)-3)]
-        
-        higher_highs = sum(1 for i in range(1, len(highs)) if highs[i] > highs[i-1] else 0)
-        lower_lows = sum(1 for i in range(1, len(lows)) if lows[i] < lows[i-1] else 0)
-        
+        highs = []
+        lows = []
+    
+        # إنشاء قوائم القمم والقيعان
+        for i in range(3, len(prices)-3):
+            high_segment = prices[i-3:i+1]
+            low_segment = prices[i-3:i+1]
+            highs.append(max(high_segment))
+            lows.append(min(low_segment))
+    
+        # حساب القمم الأعلى والقيعان الأدنى
+        higher_highs = 0
+        lower_lows = 0
+    
+        for i in range(1, len(highs)):
+            if highs[i] > highs[i-1]:
+                higher_highs += 1
+    
+        for i in range(1, len(lows)):
+            if lows[i] < lows[i-1]:
+                lower_lows += 1
+    
         if higher_highs > lower_lows + 2:
             return "uptrend"
         elif lower_lows > higher_highs + 2:
