@@ -112,22 +112,45 @@ class PrecisionManager:
             return round(price, 4)
     
     def adjust_quantity(self, symbol, quantity):
-        """ضبط الكمية حسب الدقة"""
+        """ضبط الكمية حسب الدقة - إصدار محسن"""
         try:
             symbol_info = self.get_symbol_info(symbol)
             if not symbol_info:
-                return round(quantity, 6)
-            
+                logger.warning(f"⚠️ لا توجد معلومات دقة لـ {symbol}، استخدام القيمة الافتراضية")
+                return round(quantity, 3)  # دقة افتراضية آمنة
+        
             lot_size_filter = next((f for f in symbol_info['filters'] if f['filterType'] == 'LOT_SIZE'), None)
             if lot_size_filter:
                 step_size = float(lot_size_filter['stepSize'])
                 min_qty = float(lot_size_filter.get('minQty', 0))
+                max_qty = float(lot_size_filter.get('maxQty', float('inf')))
+            
+                # حساب الدقة المناسبة
+                precision = 0
+                if step_size < 1:
+                    precision = len(str(step_size).split('.')[1].rstrip('0'))
+            
+                # ضبط الكمية حسب step_size
                 adjusted_quantity = float(int(quantity / step_size) * step_size)
-                return max(adjusted_quantity, min_qty)
-            return round(quantity, 6)
+            
+                # التأكد من الحدود
+                adjusted_quantity = max(adjusted_quantity, min_qty)
+                adjusted_quantity = min(adjusted_quantity, max_qty)
+            
+                # تقريب للدقة المناسبة
+                adjusted_quantity = round(adjusted_quantity, precision)
+            
+                logger.info(f"🎯 ضبط كمية {symbol}: {quantity} -> {adjusted_quantity} (step: {step_size}, precision: {precision})")
+            
+                return adjusted_quantity
+        
+            # إذا لم يوجد فلتر، استخدام دقة آمنة
+            return round(quantity, 3)
+        
         except Exception as e:
             logger.error(f"❌ خطأ في ضبط كمية {symbol}: {e}")
-            return round(quantity, 6)
+            # قيمة آمنة للطوارئ
+            return round(quantity, 3)
 
 class TelegramNotifier:
     """مدير إشعارات التلغرام مبسط"""
