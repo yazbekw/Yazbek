@@ -21,23 +21,24 @@ load_dotenv()
 
 # ========== الإعدادات الأساسية ==========
 TRADING_SETTINGS = {
-    'symbols': ["BNBUSDT",
-                "ETHUSDT",
-                #"SOLUSDT",
-                #"XRPUSDT",
-                #"BTCUSDT",
-                #"ADAUSDT",
-                #"AVAXUSDT",
-                #"DOTUSDT",
-                #"LINKUSDT"],
-    'base_trade_amount': 2,  # 5 USD
-    'leverage': 75,  # 20x رافعة
-    'position_size': 2 * 75,  # 100 دولار حجم المركز
-    'max_simultaneous_trades': 1,  # أقصى 2 صفقة في نفس الوقت
-    'max_trades_per_symbol': 1,  # صفقة واحدة فقط لكل عملة
-    'min_balance_required': 2,  # أقل رصيد مطلوب
+    'symbols': [
+        "BNBUSDT",
+        "ETHUSDT",
+        #"SOLUSDT",
+        #"XRPUSDT", 
+        #"BTCUSDT",
+        #"ADAUSDT",
+        #"AVAXUSDT",
+        #"DOTUSDT",
+        #"LINKUSDT"
+    ],
+    'base_trade_amount': 2,  # 2 USD
+    'leverage': 75,  # 75x leverage
+    'position_size': 2 * 75,  # 150 USD position size
+    'max_simultaneous_trades': 1,  # Max 1 trade at same time
+    'max_trades_per_symbol': 1,  # Only 1 trade per symbol
+    'min_balance_required': 2,  # Minimum balance required
 }
-
 # إزالة مستويات جني الأرباح التلقائية
 # سيتم إغلاق الصفقات يدوياً أو بإشارة خارجية فقط
 
