@@ -23,18 +23,18 @@ load_dotenv()
 TRADING_SETTINGS = {
     'symbols': ["BNBUSDT",
                 "ETHUSDT",
-                #"SOLUSDT",
-                #"XRPUSDT",
-                #"LTCUSDT",
+                "SOLUSDT",
+                "XRPUSDT",
+                "BTCUSDT",
                 #"ADAUSDT",
                 #"AVAXUSDT",
                 "DOTUSDT",
                 "LINKUSDT"],
-    'base_trade_amount': 2,  # 5 دولار
-    'leverage': 75,  # 20x رافعة
-    'position_size': 2 * 75,  # 100 دولار حجم المركز
-    'max_simultaneous_trades': 1,  # أقصى 2 صفقة في نفس الوقت
-    'max_trades_per_symbol': 1,  # صفقة واحدة فقط لكل عملة
+    'base_trade_amount': 100,  # 5 دولار
+    'leverage': 20,  # 20x رافعة
+    'position_size': 100 * 20,  # 100 دولار حجم المركز
+    'max_simultaneous_trades': 10,  # أقصى 2 صفقة في نفس الوقت
+    'max_trades_per_symbol': 2,  # صفقة واحدة فقط لكل عملة
     'min_balance_required': 2,  # أقل رصيد مطلوب
 }
 
