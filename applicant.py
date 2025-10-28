@@ -523,9 +523,28 @@ class MultiLevelTradeExecutor:
         except Exception as e:
             logger.error(f"❌ فشل إغلاق صفقة {trade_id}: {e}")
             return False, f"خطأ في الإغلاق: {str(e)}"
+
+    def cleanup_closed_trades(self):
+        """تنظيف الصفقات المغلقة من الذاكرة"""
+        try:
+            closed_trades = []
+            for trade_id, trade in list(self.active_trades.items()):
+                if trade['status'] == 'closed':
+                    closed_trades.append(trade_id)
+        
+            # حذف الصفقات المغلقة
+            for trade_id in closed_trades:
+                del self.active_trades[trade_id]
+        
+            if closed_trades:
+                logger.info(f"🧹 تم تنظيف {len(closed_trades)} صفقة مغلقة")
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في تنظيف الصفقات المغلقة: {e}")
     
     def get_active_trades(self):
         """الحصول على الصفقات النشطة - بدون تتبع تلقائي"""
+        self.cleanup_closed_trades()
         active = {}
         for trade_id, trade in self.active_trades.items():
             if trade['status'] == 'open':
