@@ -833,7 +833,7 @@ class SimpleTradeBot:
         
         # تهيئة العميل
         try:
-            self.client = Client(self.api_key, self.api_secret)
+            self.client = Client(self.api_key, self.api_secret, testnet=True)
             self.test_connection()
         except Exception as e:
             logger.error(f"❌ فشل تهيئة العميل: {e}")
