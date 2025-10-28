@@ -23,18 +23,18 @@ load_dotenv()
 TRADING_SETTINGS = {
     'symbols': ["BNBUSDT",
                 "ETHUSDT",
-                "SOLUSDT",
-                "XRPUSDT",
-                "BTCUSDT",
+                #"SOLUSDT",
+                #"XRPUSDT",
+                #"BTCUSDT",
                 #"ADAUSDT",
                 #"AVAXUSDT",
-                "DOTUSDT",
-                "LINKUSDT"],
-    'base_trade_amount': 100,  # 5 دولار
-    'leverage': 20,  # 20x رافعة
-    'position_size': 100 * 20,  # 100 دولار حجم المركز
-    'max_simultaneous_trades': 10,  # أقصى 2 صفقة في نفس الوقت
-    'max_trades_per_symbol': 2,  # صفقة واحدة فقط لكل عملة
+                #"DOTUSDT",
+                #"LINKUSDT"],
+    'base_trade_amount': 2,  # 5 دولار
+    'leverage': 75,  # 20x رافعة
+    'position_size': 2 * 75,  # 100 دولار حجم المركز
+    'max_simultaneous_trades': 1,  # أقصى 2 صفقة في نفس الوقت
+    'max_trades_per_symbol': 1,  # صفقة واحدة فقط لكل عملة
     'min_balance_required': 2,  # أقل رصيد مطلوب
 }
 
@@ -833,7 +833,7 @@ class SimpleTradeBot:
         
         # تهيئة العميل
         try:
-            self.client = Client(self.api_key, self.api_secret, testnet=True)
+            self.client = Client(self.api_key, self.api_secret)
             self.test_connection()
         except Exception as e:
             logger.error(f"❌ فشل تهيئة العميل: {e}")
