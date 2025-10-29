@@ -220,52 +220,85 @@ class MultiLevelTradeExecutor:
         return None
 
     def cleanup_closed_trades(self):
-        """تنظيف الصفقات المغلقة من الذاكرة"""
+        """تنظيف الصفقات المغلقة من الذاكرة - نسخة محسنة"""
         try:
-            closed_trades = []
+            # التحقق من الصفقات النشطة فعلياً في Binance
+            actual_active_symbols = set()
+            try:
+                positions = self.client.futures_account()['positions']
+                for position in positions:
+                    position_amt = float(position['positionAmt'])
+                    if position_amt != 0:
+                        actual_active_symbols.add(position['symbol'])
+            except Exception as e:
+                logger.warning(f"⚠️ لا يمكن التحقق من الصفقات الفعلية: {e}")
+
+            # تحديد الصفقات المغلقة للتنظيف
+            trades_to_remove = []
             for trade_id, trade in list(self.active_trades.items()):
+                symbol = trade['symbol']
+            
+                # إذا كانت الصفقة مغلقة في حالتنا المحلية
                 if trade['status'] == 'closed':
-                    closed_trades.append(trade_id)
+                    trades_to_remove.append(trade_id)
+                # إذا لم تعد الصفقة نشطة في Binance لكننا نسجلها كمفتوحة
+                elif symbol not in actual_active_symbols and trade['status'] == 'open':
+                    logger.warning(f"🔄 تصحيح حالة صفقة {trade_id} - لم تعد نشطة في Binance")
+                    trade['status'] = 'closed'
+                    trade['close_reason'] = 'تصحيح تلقائي - لم تعد نشطة'
+                    trades_to_remove.append(trade_id)
         
             # حذف الصفقات المغلقة
-            for trade_id in closed_trades:
-                del self.active_trades[trade_id]
-        
-            if closed_trades:
-                logger.info(f"🧹 تم تنظيف {len(closed_trades)} صفقة مغلقة: {closed_trades}")
+            for trade_id in trades_to_remove:
+                if trade_id in self.active_trades:
+                    del self.active_trades[trade_id]
+                    logger.info(f"🧹 تم حذف صفقة مغلقة: {trade_id}")
+    
+            if trades_to_remove:
+                logger.info(f"🧹 تم تنظيف {len(trades_to_remove)} صفقة مغلقة")
             else:
                 logger.info("🧹 لا توجد صفقات مغلقة للتنظيف")
-            
+        
         except Exception as e:
             logger.error(f"❌ خطأ في تنظيف الصفقات المغلقة: {e}")
-
+    
     def can_execute_trade(self, symbol, direction):
         """التحقق من إمكانية تنفيذ الصفقة - النسخة المصححة"""
-        self.cleanup_closed_trades()
         try:
+            # تنظيف شامل للصفقات المغلقة أولاً
+            self.cleanup_closed_trades()
+        
             # التحقق من الصفقات النشطة الفعلية من Binance مباشرة
             try:
                 positions = self.client.futures_account()['positions']
                 active_symbols = []
                 symbol_positions = 0
-            
+        
                 for position in positions:
                     position_amt = float(position['positionAmt'])
-                    if position_amt != 0:
+                    if position_amt != 0:  # فقط الصفقات النشطة فعلياً
                         if position['symbol'] == symbol:
                             symbol_positions += 1
                         active_symbols.append(position['symbol'])
+        
+                logger.info(f"🔍 التحقق من Binance - {symbol}: {symbol_positions} صفقات نشطة")
             
-                # ✅ السماح بصفقتين لنفس العملة بدلاً من رفض الثانية
-                if symbol_positions >= TRADING_SETTINGS['max_trades_per_symbol']:
-                    logger.warning(f"⚠️ وصل الحد الأقصى للصفقات على {symbol}: {symbol_positions}/{TRADING_SETTINGS['max_trades_per_symbol']}")
-                    return False, f"وصل الحد الأقصى للصفقات على {symbol} ({symbol_positions}/{TRADING_SETTINGS['max_trades_per_symbol']})"
-            
+                # ✅ التحقق من العدد المسموح لكل عملة
+                max_per_symbol = TRADING_SETTINGS['max_trades_per_symbol']
+                if symbol_positions >= max_per_symbol:
+                    logger.warning(f"⚠️ وصل الحد الأقصى للصفقات على {symbol}: {symbol_positions}/{max_per_symbol}")
+                    return False, f"وصل الحد الأقصى للصفقات على {symbol} ({symbol_positions}/{max_per_symbol})"
+        
                 # التحقق من العدد الإجمالي للصفقات النشطة
-                unique_active_symbols = set(active_symbols)
-                if len(unique_active_symbols) >= TRADING_SETTINGS['max_simultaneous_trades']:
-                    logger.warning(f"⚠️ وصل الحد الأقصى للصفقات النشطة في Binance: {len(unique_active_symbols)}")
-                    return False, f"وصل الحد الأقصى للصفقات النشطة: {len(unique_active_symbols)}"
+                unique_active_symbols = [s for s in active_symbols if s]  # إزالة القيم الفارغة
+                total_active_trades = len(set(unique_active_symbols))
+            
+                max_simultaneous = TRADING_SETTINGS['max_simultaneous_trades']
+                if total_active_trades >= max_simultaneous:
+                    logger.warning(f"⚠️ وصل الحد الأقصى للصفقات النشطة في Binance: {total_active_trades}/{max_simultaneous}")
+                    return False, f"وصل الحد الأقصى للصفقات النشطة: {total_active_trades}/{max_simultaneous}"
+            
+                logger.info(f"✅ Binance: {symbol_positions} صفقة على {symbol}, إجمالي {total_active_trades} صفقات نشطة")
                 
             except Exception as binance_error:
                 logger.warning(f"⚠️ لا يمكن التحقق من صفقات Binance: {binance_error}")
@@ -273,32 +306,32 @@ class MultiLevelTradeExecutor:
                 active_trades = self.get_active_trades()
                 symbol_trades_count = sum(1 for trade in active_trades.values() 
                                 if trade['symbol'] == symbol and trade['status'] == 'open')
-            
+        
                 if symbol_trades_count >= TRADING_SETTINGS['max_trades_per_symbol']:
                     return False, f"وصل الحد الأقصى للصفقات على {symbol} ({symbol_trades_count}/{TRADING_SETTINGS['max_trades_per_symbol']})"
-            
-                if len(active_trades) >= TRADING_SETTINGS['max_simultaneous_trades']:
-                    return False, "وصل الحد الأقصى للصفقات النشطة"
         
+                if len(active_trades) >= TRADING_SETTINGS['max_simultaneous_trades']:
+                    return False, f"وصل الحد الأقصى للصفقات النشطة: {len(active_trades)}/{TRADING_SETTINGS['max_simultaneous_trades']}"
+    
             # التحقق من الرصيد المتاح
             try:
                 balance_info = self.client.futures_account_balance()
                 usdt_balance = next((float(b['balance']) for b in balance_info if b['asset'] == 'USDT'), 0)
-        
+    
                 required_margin = TRADING_SETTINGS['base_trade_amount']
                 if usdt_balance < required_margin:
                     logger.warning(f"⚠️ رصيد غير كافي: {usdt_balance:.2f} USDT < {required_margin} USDT")
                     return False, f"رصيد غير كافي: {usdt_balance:.2f} USDT"
-            
+        
             except Exception as balance_error:
                 logger.warning(f"⚠️ لا يمكن التحقق من الرصيد: {balance_error}")
-    
-            logger.info(f"✅ يمكن تنفيذ صفقة {symbol} - التحقق بنجاح")
+
+            logger.info(f"✅ يمكن تنفيذ صفقة {symbol} - جميع الشروط متوفرة")
             return True, "يمكن تنفيذ الصفقة"
-    
+
         except Exception as e:
             logger.error(f"❌ خطأ في التحقق من إمكانية التنفيذ: {e}")
-            return False, f"خطأ في التحقق: {str(e)}"    
+            return False, f"خطأ في التحقق: {str(e)}"
     
     def get_trade_level(self, confidence_score):
         """تحديد مستوى التداول بناء على درجة الثقة - محدث"""
@@ -995,6 +1028,57 @@ def receive_heartbeat():
         logger.error(f"❌ خطأ في استقبال النبضة: {e}")
         return jsonify({'success': False, 'message': f'خطأ في استقبال النبضة: {str(e)}'})
 
+@app.route('/debug/positions')
+def debug_positions():
+    """فحص تفصيلي للمواقع والصفقات - للتشخيص"""
+    try:
+        bot = SimpleTradeBot.get_instance()
+        
+        # الحصول على المواقع الفعلية من Binance
+        positions_info = []
+        try:
+            positions = bot.client.futures_account()['positions']
+            for position in positions:
+                position_amt = float(position['positionAmt'])
+                if position_amt != 0:
+                    positions_info.append({
+                        'symbol': position['symbol'],
+                        'positionAmt': position_amt,
+                        'entryPrice': position['entryPrice'],
+                        'unrealizedProfit': position['unrealizedProfit']
+                    })
+        except Exception as e:
+            positions_info = {'error': str(e)}
+        
+        # الحصول على الصفقات النشطة في الذاكرة
+        active_trades = bot.trade_executor.get_active_trades()
+        
+        # الحصول على الرصيد
+        balance_info = {}
+        try:
+            balance = bot.client.futures_account_balance()
+            usdt_balance = next((b for b in balance if b['asset'] == 'USDT'), {})
+            balance_info = usdt_balance
+        except Exception as e:
+            balance_info = {'error': str(e)}
+        
+        debug_info = {
+            'binance_positions': positions_info,
+            'local_active_trades': active_trades,
+            'local_trades_count': len(active_trades),
+            'balance_info': balance_info,
+            'settings': {
+                'max_simultaneous_trades': TRADING_SETTINGS['max_simultaneous_trades'],
+                'max_trades_per_symbol': TRADING_SETTINGS['max_trades_per_symbol']
+            },
+            'timestamp': datetime.now(damascus_tz).isoformat()
+        }
+        
+        return jsonify(debug_info)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)})
+    
 @app.route('/health')
 def health_check_endpoint():
     """فحص صحة البوت والاتصال - جديد"""
