@@ -204,6 +204,21 @@ class MultiLevelTradeExecutor:
         self.notifier = notifier
         self.precision_manager = PrecisionManager(client)
         self.active_trades = {}
+        self.start_periodic_cleanup()
+
+    def start_periodic_cleanup(self):
+        """بدء التنظيف الدوري للصفقات المغلقة"""
+        def cleanup_loop():
+            while True:
+                try:
+                    time.sleep(300)  # كل 5 دقائق
+                    self.cleanup_closed_trades()
+                    logger.info("🔄 تنظيف دوري للصفقات المغلقة")
+                except Exception as e:
+                    logger.error(f"❌ خطأ في التنظيف الدوري: {e}")
+    
+        cleanup_thread = threading.Thread(target=cleanup_loop, daemon=True)
+        cleanup_thread.start()
     
     def _get_current_price(self, symbol):
         """الحصول على السعر الحالي"""
@@ -222,45 +237,42 @@ class MultiLevelTradeExecutor:
     def cleanup_closed_trades(self):
         """تنظيف الصفقات المغلقة من الذاكرة - نسخة محسنة"""
         try:
-            # التحقق من الصفقات النشطة فعلياً في Binance
-            actual_active_symbols = set()
-            try:
-                positions = self.client.futures_account()['positions']
-                for position in positions:
-                    position_amt = float(position['positionAmt'])
-                    if position_amt != 0:
-                        actual_active_symbols.add(position['symbol'])
-            except Exception as e:
-                logger.warning(f"⚠️ لا يمكن التحقق من الصفقات الفعلية: {e}")
-
-            # تحديد الصفقات المغلقة للتنظيف
-            trades_to_remove = []
+            closed_trades = []
+            old_trades = []
+        
+            current_time = datetime.now(damascus_tz)
+        
             for trade_id, trade in list(self.active_trades.items()):
-                symbol = trade['symbol']
-            
-                # إذا كانت الصفقة مغلقة في حالتنا المحلية
+                # 1. الصفقات المغلقة
                 if trade['status'] == 'closed':
-                    trades_to_remove.append(trade_id)
-                # إذا لم تعد الصفقة نشطة في Binance لكننا نسجلها كمفتوحة
-                elif symbol not in actual_active_symbols and trade['status'] == 'open':
-                    logger.warning(f"🔄 تصحيح حالة صفقة {trade_id} - لم تعد نشطة في Binance")
-                    trade['status'] = 'closed'
-                    trade['close_reason'] = 'تصحيح تلقائي - لم تعد نشطة'
-                    trades_to_remove.append(trade_id)
+                    closed_trades.append(trade_id)
+            
+                # 2. الصفقات القديمة جداً (أكثر من 24 ساعة)
+                elif trade['status'] == 'open':
+                    trade_age = current_time - trade['timestamp']
+                    if trade_age.total_seconds() > 24 * 3600:  # 24 ساعة
+                        old_trades.append(trade_id)
+                        logger.warning(f"⏳ صفقة قديمة: {trade_id} - عمرها {trade_age}")
         
             # حذف الصفقات المغلقة
-            for trade_id in trades_to_remove:
+            for trade_id in closed_trades:
+                del self.active_trades[trade_id]
+        
+            # حذف الصفقات القديمة جداً (للاحتياط)
+            for trade_id in old_trades:
                 if trade_id in self.active_trades:
                     del self.active_trades[trade_id]
-                    logger.info(f"🧹 تم حذف صفقة مغلقة: {trade_id}")
-    
-            if trades_to_remove:
-                logger.info(f"🧹 تم تنظيف {len(trades_to_remove)} صفقة مغلقة")
-            else:
-                logger.info("🧹 لا توجد صفقات مغلقة للتنظيف")
+                    logger.info(f"🗑️ تم إزالة صفقة قديمة: {trade_id}")
+        
+            if closed_trades or old_trades:
+                total_cleaned = len(closed_trades) + len(old_trades)
+                logger.info(f"🧹 تم تنظيف {total_cleaned} صفقة (مغلقة: {len(closed_trades)}, قديمة: {len(old_trades)})")
+            
+            return len(closed_trades) + len(old_trades)
         
         except Exception as e:
             logger.error(f"❌ خطأ في تنظيف الصفقات المغلقة: {e}")
+            return 0    
     
     def can_execute_trade(self, symbol, direction):
         """التحقق من إمكانية تنفيذ الصفقة - النسخة المصححة"""
