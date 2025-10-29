@@ -98,6 +98,7 @@ class TelegramBotManager:
 
 🛠️ <b>أوامر الإدارة:</b>
 /cleanup - تنظيف الصفقات المعلقة
+/pending_cleanup - تنظيف الصفقات المعلقة في Binance
 /close_all - إغلاق جميع الصفقات
 /close_symbol [رمز] - إغلاق صفقات عملة محددة
 /sync - مزامنة مع Binance
@@ -112,7 +113,7 @@ class TelegramBotManager:
 /symbols - العملات المدعومة
 
 اكتب أي أمر للبدء 🚀
-            """
+        """
             self.bot.reply_to(message, welcome_text, parse_mode='HTML')
         
         @self.bot.message_handler(commands=['status'])
@@ -226,6 +227,65 @@ class TelegramBotManager:
                 
             except Exception as e:
                 self.bot.reply_to(message, f"❌ خطأ في الإغلاق الجماعي: {str(e)}")
+
+        @self.bot.message_handler(commands=['pending_cleanup'])
+        def pending_cleanup_command(message):
+            if not self.is_authorized(message.chat.id):
+                return
+        
+            try:
+                bot = SimpleTradeBot.get_instance()
+        
+                # تنظيف الصفقات المعلقة في Binance فقط
+                pending_cleaned = bot.trade_executor.cleanup_pending_trades()
+        
+                response_text = f"""
+        🔍 <b>تنظيف الصفقات المعلقة في Binance</b>
+
+        ✅ تم تنظيف: {pending_cleaned} صفقة معلقة
+        📊 الصفقات النشطة الحالية: {len(bot.trade_executor.get_active_trades())}
+
+        الصفقات المعلقة هي التي:
+        • مسجلة كمفتوحة في الذاكرة المحلية
+        • ولكنها غير موجودة فعلياً في Binance
+        • عادة بسبب أخطاء في التنفيذ
+
+        تم التنظيف ✅
+                """
+        
+                self.bot.reply_to(message, response_text, parse_mode='HTML')
+        
+            except Exception as e:
+                self.bot.reply_to(message, f"❌ خطأ في تنظيف الصفقات المعلقة: {str(e)}")
+
+        @self.bot.message_handler(commands=['cleanup'])
+        def cleanup_command(message):
+            if not self.is_authorized(message.chat.id):
+                return
+        
+            try:
+                bot = SimpleTradeBot.get_instance()
+        
+                # تنظيف الصفقات المعلقة في Binance
+                pending_cleaned = bot.trade_executor.cleanup_pending_trades()
+        
+                # تنظيف الصفقات المغلقة محلياً
+                local_cleaned = bot.trade_executor.cleanup_closed_trades()
+        
+                response_text = f"""
+        🧹 <b>نتيجة التنظيف الشامل</b>
+
+        ✅ الصفقات المعلقة: تم تنظيف {pending_cleaned} صفقة
+        🗑️ الصفقات المحلية: تم تنظيف {local_cleaned} صفقة
+        📊 الصفقات النشطة الحالية: {len(bot.trade_executor.get_active_trades())}
+
+        تمت العملية بنجاح ✅
+                """
+        
+                self.bot.reply_to(message, response_text, parse_mode='HTML')
+        
+            except Exception as e:
+                self.bot.reply_to(message, f"❌ خطأ في التنظيف: {str(e)}")
         
         @self.bot.message_handler(commands=['close_symbol'])
         def close_symbol_command(message):
@@ -690,14 +750,80 @@ class MultiLevelTradeExecutor:
         self.active_trades = {}
         self.start_periodic_cleanup()
 
+    def cleanup_pending_trades(self):
+        """اكتشاف وتنظيف الصفقات المعلقة التي فشل تنفيذها في Binance"""
+        try:
+           pending_trades = []
+        
+            # الحصول على جميع المواقع الفعلية من Binance
+            positions = self.client.futures_account()['positions']
+            active_symbols_in_binance = set()
+        
+            for position in positions:
+                position_amt = float(position['positionAmt'])
+                if position_amt != 0:  # فقط الصفقات النشطة فعلياً
+                    active_symbols_in_binance.add(position['symbol'])
+        
+            # البحث عن الصفقات المسجلة كمفتوحة محلياً ولكنها مغلقة في Binance
+            for trade_id, trade in list(self.active_trades.items()):
+                if trade['status'] == 'open':
+                    symbol = trade['symbol']
+                
+                    # إذا كانت الصفقة مفتوحة محلياً ولكنها غير موجودة في Binance
+                    if symbol not in active_symbols_in_binance:
+                        pending_trades.append(trade_id)
+                        logger.warning(f"🔍 اكتشاف صفقة معلقة: {trade_id} - مسجلة مفتوحة ولكن مغلقة في Binance")
+        
+            # تنظيف الصفقات المعلقة
+            for trade_id in pending_trades:
+                trade = self.active_trades[trade_id]
+                trade.update({
+                    'status': 'closed',
+                    'close_price': trade.get('current_price', trade['entry_price']),
+                    'close_time': datetime.now(damascus_tz),
+                    'close_reason': 'اكتشاف تعليق - الصفقة غير موجودة في Binance',
+                    'pnl_pct': 0,
+                    'pnl_usd': 0
+                })
+                logger.info(f"🧹 تنظيف صفقة معلقة: {trade_id}")
+        
+            if pending_trades:
+                logger.info(f"✅ تم تنظيف {len(pending_trades)} صفقة معلقة")
+            
+                # إرسال إشعار بالصفقات المعلقة التي تم تنظيفها
+                if self.notifier and pending_trades:
+                    message = (
+                        f"🧹 <b>تنظيف الصفقات المعلقة</b>\n"
+                        f"تم اكتشاف وتنظيف {len(pending_trades)} صفقة معلقة:\n"
+                    )
+                    for trade_id in pending_trades:
+                        trade = self.active_trades[trade_id]
+                        message += f"• {trade['symbol']} ({trade['side']}) - {trade_id}\n"
+                    message += f"\nالسبب: الصفقات كانت مسجلة كمفتوحة محلياً ولكنها غير موجودة في Binance\n"
+                    message += f"الوقت: {datetime.now(damascus_tz).strftime('%H:%M:%S')}"
+                    self.notifier.send_message(message)
+        
+            return len(pending_trades)
+        
+        except Exception as e:
+            logger.error(f"❌ خطأ في تنظيف الصفقات المعلقة: {e}")
+            return 0
+
     def start_periodic_cleanup(self):
-        """بدء التنظيف الدوري للصفقات المغلقة"""
+        """بدء التنظيف الدوري للصفقات المغلقة والمعلقة"""
         def cleanup_loop():
             while True:
                 try:
                     time.sleep(300)  # كل 5 دقائق
+                
+                    # تنظيف الصفقات المعلقة في Binance أولاً
+                    self.cleanup_pending_trades()
+                
+                    # ثم تنظيف الصفقات المغلقة محلياً
                     self.cleanup_closed_trades()
-                    logger.info("🔄 تنظيف دوري للصفقات المغلقة")
+                
+                    logger.info("🔄 تنظيف دوري للصفقات المغلقة والمعلقة")
+                
                 except Exception as e:
                     logger.error(f"❌ خطأ في التنظيف الدوري: {e}")
     
