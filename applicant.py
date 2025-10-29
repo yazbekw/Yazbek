@@ -35,7 +35,7 @@ TRADING_SETTINGS = {
     'base_trade_amount': 2,  # 2 USD
     'leverage': 75,  # 75x leverage
     'position_size': 2 * 75,  # 150 USD position size
-    'max_simultaneous_trades': 1,  # Max 1 trade at same time
+    'max_simultaneous_trades': 2,  # Max 1 trade at same time
     'max_trades_per_symbol': 1,  # Only 1 trade per symbol
     'min_balance_required': 2,  # Minimum balance required
 }
