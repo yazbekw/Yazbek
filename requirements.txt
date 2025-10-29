@@ -18,8 +18,5 @@ pydantic==2.5.0
 matplotlib==3.7.1
 scipy==1.9.3
 
-# التلغرام
-python-telegram-bot==20.7
-
 # أدوات مساعدة
 schedule==1.1.0
