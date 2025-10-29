@@ -68,7 +68,7 @@ def require_api_key(f):
     return decorated_function
 
 class TelegramBotManager:
-    """مدير أوامر Telegram"""
+    """مدير أوامر Telegram الكامل"""
     
     def __init__(self, token, trade_executor, notifier):
         self.bot = telebot.TeleBot(token)
@@ -80,10 +80,11 @@ class TelegramBotManager:
         self.register_handlers()
         
     def register_handlers(self):
-        """تسجيل معالجات الأوامر"""
+        """تسجيل جميع معالجات الأوامر"""
         
         @self.bot.message_handler(commands=['start', 'help'])
         def send_welcome(message):
+            """رسالة الترحيب والأوامر المتاحة"""
             if not self.is_authorized(message.chat.id):
                 self.bot.reply_to(message, "❌ غير مصرح لك باستخدام هذا البوت")
                 return
@@ -94,30 +95,33 @@ class TelegramBotManager:
 📊 <b>أوامر الحالة:</b>
 /status - حالة البوت والصفقات
 /balance - الرصيد والحساب
-/positions - المواقع المفتوحة
+/positions - المواقع المفتوحة في Binance
+/trades - الصفقات النشطة
+/history - سجل الصفقات المغلقة
+/signals - آخر الإشارات المستلمة
 
 🛠️ <b>أوامر الإدارة:</b>
-/cleanup - تنظيف الصفقات المعلقة
-/pending_cleanup - تنظيف الصفقات المعلقة في Binance
+/cleanup - تنظيف شامل للصفقات
+/pending_cleanup - تنظيف الصفقات المعلقة
 /close_all - إغلاق جميع الصفقات
 /close_symbol [رمز] - إغلاق صفقات عملة محددة
 /sync - مزامنة مع Binance
-
-📈 <b>أوامر التداول:</b>
-/trades - عرض الصفقات النشطة
-/history - سجل الصفقات المغلقة
-/signals - آخر الإشارات
 
 ⚙️ <b>أوامر الإعدادات:</b>
 /settings - عرض الإعدادات الحالية
 /symbols - العملات المدعومة
 
+🔧 <b>أوامر التداول:</b>
+/force_close [رمز] - إغلاق إجباري لعملة
+/check_symbol [رمز] - فحص حالة عملة
+
 اكتب أي أمر للبدء 🚀
-        """
+            """
             self.bot.reply_to(message, welcome_text, parse_mode='HTML')
         
         @self.bot.message_handler(commands=['status'])
         def status_command(message):
+            """حالة البوت والصفقات"""
             if not self.is_authorized(message.chat.id):
                 return
                 
@@ -126,12 +130,17 @@ class TelegramBotManager:
                 status = bot.get_status()
                 active_trades = bot.trade_executor.get_active_trades()
                 
+                # الحصول على معلومات الرصيد
+                balance_info = bot.client.futures_account_balance()
+                usdt_balance = next((b for b in balance_info if b['asset'] == 'USDT'), {})
+                
                 status_text = f"""
-📊 <b>حالة البوت</b>
+📊 <b>حالة البوت الشاملة</b>
 
 🟢 الحالة: نشط
 📈 الصفقات النشطة: {len(active_trades)}/{status['max_simultaneous_trades']}
 📨 الإشارات المستلمة: {status['total_signals_received']}
+💰 الرصيد: {float(usdt_balance.get('balance', 0)):.2f} USDT
 🕒 آخر تحديث: {datetime.now(damascus_tz).strftime('%H:%M:%S')}
 
 <b>الصفقات النشطة:</b>
@@ -140,8 +149,13 @@ class TelegramBotManager:
                 if active_trades:
                     for trade_id, trade in active_trades.items():
                         current_price = trade.get('current_price', trade['entry_price'])
-                        pnl_pct = ((current_price - trade['entry_price']) / trade['entry_price'] * 100) 
-                        if trade['side'] == 'LONG' else ((trade['entry_price'] - current_price) / trade['entry_price'] * 100)
+                        if trade['side'] == 'LONG':
+                            pnl_pct = (current_price - trade['entry_price']) / trade['entry_price'] * 100
+                        else:
+                            pnl_pct = (trade['entry_price'] - current_price) / trade['entry_price'] * 100
+                        
+                        trade_age = (datetime.now(damascus_tz) - trade['timestamp'])
+                        age_minutes = trade_age.seconds // 60
                         
                         status_text += f"""
 🔹 {trade['symbol']} ({trade['side']})
@@ -149,10 +163,11 @@ class TelegramBotManager:
    الدخول: ${trade['entry_price']:.4f}
    الحالي: ${current_price:.4f}
    PnL: {pnl_pct:+.2f}%
-   العمر: {(datetime.now(damascus_tz) - trade['timestamp']).seconds // 60} دقيقة
+   العمر: {age_minutes} دقيقة
+   المعرف: {trade_id[-8:]}
                         """
                 else:
-                    status_text += "\nلا توجد صفقات نشطة"
+                    status_text += "\n✅ لا توجد صفقات نشطة"
                 
                 self.bot.reply_to(message, status_text, parse_mode='HTML')
                 
@@ -161,35 +176,91 @@ class TelegramBotManager:
         
         @self.bot.message_handler(commands=['cleanup'])
         def cleanup_command(message):
+            """تنظيف شامل للصفقات"""
             if not self.is_authorized(message.chat.id):
                 return
                 
             try:
                 bot = SimpleTradeBot.get_instance()
                 
-                # مزامنة مع Binance أولاً
-                synced_count = bot.trade_executor.sync_with_binance_positions()
+                # إرسال رسالة الانتظار
+                wait_msg = self.bot.reply_to(message, "🔄 جاري التنظيف الشامل...")
                 
-                # تنظيف الصفقات المغلقة
-                cleaned_count = bot.trade_executor.cleanup_closed_trades()
+                # تنظيف الصفقات المعلقة في Binance
+                pending_cleaned = bot.trade_executor.cleanup_pending_trades()
+                
+                # تنظيف الصفقات المغلقة محلياً
+                local_cleaned = bot.trade_executor.cleanup_closed_trades()
+                
+                # الحصول على الصفقات الحالية
+                active_trades = bot.trade_executor.get_active_trades()
                 
                 response_text = f"""
-🧹 <b>تنظيف الصفقات المعلقة</b>
+🧹 <b>نتيجة التنظيف الشامل</b>
 
-✅ المزامنة: تمت مزامنة {synced_count} صفقة
-🗑️ التنظيف: تم تنظيف {cleaned_count} صفقة
-📊 الصفقات النشطة الحالية: {len(bot.trade_executor.get_active_trades())}
+✅ الصفقات المعلقة: {pending_cleaned} صفقة
+🗑️ الصفقات المحلية: {local_cleaned} صفقة
+📊 الصفقات النشطة الحالية: {len(active_trades)}
+
+📋 <b>تفاصيل التنظيف:</b>
+• الصفقات المعلقة: صفقات مسجلة مفتوحة محلياً ولكنها مغلقة في Binance
+• الصفقات المحلية: صفقات مغلقة أو قديمة في الذاكرة المحلية
 
 تمت العملية بنجاح ✅
                 """
                 
-                self.bot.reply_to(message, response_text, parse_mode='HTML')
+                self.bot.edit_message_text(
+                    chat_id=message.chat.id,
+                    message_id=wait_msg.message_id,
+                    text=response_text,
+                    parse_mode='HTML'
+                )
                 
             except Exception as e:
                 self.bot.reply_to(message, f"❌ خطأ في التنظيف: {str(e)}")
         
+        @self.bot.message_handler(commands=['pending_cleanup'])
+        def pending_cleanup_command(message):
+            """تنظيف الصفقات المعلقة في Binance"""
+            if not self.is_authorized(message.chat.id):
+                return
+        
+            try:
+                bot = SimpleTradeBot.get_instance()
+                
+                # إرسال رسالة الانتظار
+                wait_msg = self.bot.reply_to(message, "🔍 جاري البحث عن الصفقات المعلقة...")
+        
+                # تنظيف الصفقات المعلقة في Binance فقط
+                pending_cleaned = bot.trade_executor.cleanup_pending_trades()
+        
+                response_text = f"""
+🔍 <b>تنظيف الصفقات المعلقة في Binance</b>
+
+✅ تم تنظيف: {pending_cleaned} صفقة معلقة
+📊 الصفقات النشطة الحالية: {len(bot.trade_executor.get_active_trades())}
+
+<b>ماهي الصفقات المعلقة؟</b>
+• صفقات مسجلة كمفتوحة في الذاكرة المحلية
+• ولكنها غير موجودة فعلياً في Binance
+• تحدث عادة بسبب أخطاء في التنفيذ أو اتصال
+
+تم التنظيف ✅
+                """
+        
+                self.bot.edit_message_text(
+                    chat_id=message.chat.id,
+                    message_id=wait_msg.message_id,
+                    text=response_text,
+                    parse_mode='HTML'
+                )
+        
+            except Exception as e:
+                self.bot.reply_to(message, f"❌ خطأ في تنظيف الصفقات المعلقة: {str(e)}")
+        
         @self.bot.message_handler(commands=['close_all'])
         def close_all_command(message):
+            """إغلاق جميع الصفقات النشطة"""
             if not self.is_authorized(message.chat.id):
                 return
                 
@@ -201,101 +272,42 @@ class TelegramBotManager:
                     self.bot.reply_to(message, "✅ لا توجد صفقات نشطة للإغلاق")
                     return
                 
-                self.bot.reply_to(message, f"🔄 جاري إغلاق {len(active_trades)} صفقة...")
-                
-                success_count = 0
-                failed_count = 0
-                
-                for trade_id, trade in active_trades.items():
-                    success, msg = bot.trade_executor.close_trade(trade_id, "إغلاق جماعي بأمر Telegram")
-                    if success:
-                        success_count += 1
-                    else:
-                        failed_count += 1
-                
-                result_text = f"""
-🔒 <b>نتيجة الإغلاق الجماعي</b>
+                # طلب تأكيد
+                confirm_text = f"""
+⚠️ <b>تأكيد الإغلاق الجماعي</b>
 
-✅ تم بنجاح: {success_count} صفقة
-❌ فشل: {failed_count} صفقة
-📊 الإجمالي: {len(active_trades)} صفقة
+📊 عدد الصفقات: {len(active_trades)}
+💰 إجمالي الصفقات النشطة
 
-تمت العملية 🎯
+هل تريد حقاً إغلاق جميع الصفقات؟
                 """
                 
-                self.bot.reply_to(message, result_text, parse_mode='HTML')
+                markup = telebot.types.InlineKeyboardMarkup()
+                markup.add(
+                    telebot.types.InlineKeyboardButton("✅ نعم، إغلاق الكل", callback_data="confirm_close_all"),
+                    telebot.types.InlineKeyboardButton("❌ إلغاء", callback_data="cancel_close_all")
+                )
+                
+                self.bot.reply_to(message, confirm_text, parse_mode='HTML', reply_markup=markup)
                 
             except Exception as e:
                 self.bot.reply_to(message, f"❌ خطأ في الإغلاق الجماعي: {str(e)}")
-
-        @self.bot.message_handler(commands=['pending_cleanup'])
-        def pending_cleanup_command(message):
-            if not self.is_authorized(message.chat.id):
-                return
-        
-            try:
-                bot = SimpleTradeBot.get_instance()
-        
-                # تنظيف الصفقات المعلقة في Binance فقط
-                pending_cleaned = bot.trade_executor.cleanup_pending_trades()
-        
-                response_text = f"""
-        🔍 <b>تنظيف الصفقات المعلقة في Binance</b>
-
-        ✅ تم تنظيف: {pending_cleaned} صفقة معلقة
-        📊 الصفقات النشطة الحالية: {len(bot.trade_executor.get_active_trades())}
-
-        الصفقات المعلقة هي التي:
-        • مسجلة كمفتوحة في الذاكرة المحلية
-        • ولكنها غير موجودة فعلياً في Binance
-        • عادة بسبب أخطاء في التنفيذ
-
-        تم التنظيف ✅
-                """
-        
-                self.bot.reply_to(message, response_text, parse_mode='HTML')
-        
-            except Exception as e:
-                self.bot.reply_to(message, f"❌ خطأ في تنظيف الصفقات المعلقة: {str(e)}")
-
-        @self.bot.message_handler(commands=['cleanup'])
-        def cleanup_command(message):
-            if not self.is_authorized(message.chat.id):
-                return
-        
-            try:
-                bot = SimpleTradeBot.get_instance()
-        
-                # تنظيف الصفقات المعلقة في Binance
-                pending_cleaned = bot.trade_executor.cleanup_pending_trades()
-        
-                # تنظيف الصفقات المغلقة محلياً
-                local_cleaned = bot.trade_executor.cleanup_closed_trades()
-        
-                response_text = f"""
-        🧹 <b>نتيجة التنظيف الشامل</b>
-
-        ✅ الصفقات المعلقة: تم تنظيف {pending_cleaned} صفقة
-        🗑️ الصفقات المحلية: تم تنظيف {local_cleaned} صفقة
-        📊 الصفقات النشطة الحالية: {len(bot.trade_executor.get_active_trades())}
-
-        تمت العملية بنجاح ✅
-                """
-        
-                self.bot.reply_to(message, response_text, parse_mode='HTML')
-        
-            except Exception as e:
-                self.bot.reply_to(message, f"❌ خطأ في التنظيف: {str(e)}")
         
         @self.bot.message_handler(commands=['close_symbol'])
         def close_symbol_command(message):
+            """إغلاق صفقات عملة محددة"""
             if not self.is_authorized(message.chat.id):
                 return
                 
             try:
                 command_parts = message.text.split()
                 if len(command_parts) < 2:
-                    self.bot.reply_to(message, "❌ يرجى تحديد رمز العملة\nمثال: /close_symbol BNBUSDT")
+                    self.bot.reply_to(message, 
+                        "❌ يرجى تحديد رمز العملة\n"
+                        "مثال: <code>/close_symbol BNBUSDT</code>\n"
+                        "أو: <code>/close_symbol ETHUSDT</code>",
+                        parse_mode='HTML'
+                    )
                     return
                 
                 symbol = command_parts[1].upper()
@@ -310,26 +322,49 @@ class TelegramBotManager:
                     self.bot.reply_to(message, f"✅ لا توجد صفقات نشطة لـ {symbol}")
                     return
                 
-                self.bot.reply_to(message, f"🔄 جاري إغلاق {len(symbol_trades)} صفقة لـ {symbol}...")
+                # عرض تفاصيل الصفقات وطلب التأكيد
+                trades_info = ""
+                for trade_id, trade in symbol_trades.items():
+                    current_price = trade.get('current_price', trade['entry_price'])
+                    if trade['side'] == 'LONG':
+                        pnl_pct = (current_price - trade['entry_price']) / trade['entry_price'] * 100
+                    else:
+                        pnl_pct = (trade['entry_price'] - current_price) / trade['entry_price'] * 100
+                    
+                    trades_info += f"• {trade['side']} - PnL: {pnl_pct:+.2f}% - {trade_id[-8:]}\n"
                 
-                success_count = 0
-                for trade_id in symbol_trades.keys():
-                    success, msg = bot.trade_executor.close_trade(trade_id, f"إغلاق {symbol} بأمر Telegram")
-                    if success:
-                        success_count += 1
+                confirm_text = f"""
+⚠️ <b>تأكيد إغلاق صفقات {symbol}</b>
+
+📊 عدد الصفقات: {len(symbol_trades)}
+📈 التفاصيل:
+{trades_info}
+
+هل تريد إغلاق هذه الصفقات؟
+                """
                 
-                self.bot.reply_to(message, f"✅ تم إغلاق {success_count} من {len(symbol_trades)} صفقة لـ {symbol}")
+                markup = telebot.types.InlineKeyboardMarkup()
+                markup.add(
+                    telebot.types.InlineKeyboardButton(f"✅ إغلاق {symbol}", callback_data=f"confirm_close_symbol_{symbol}"),
+                    telebot.types.InlineKeyboardButton("❌ إلغاء", callback_data="cancel_close_symbol")
+                )
+                
+                self.bot.reply_to(message, confirm_text, parse_mode='HTML', reply_markup=markup)
                 
             except Exception as e:
                 self.bot.reply_to(message, f"❌ خطأ في إغلاق صفقات {symbol}: {str(e)}")
         
         @self.bot.message_handler(commands=['sync'])
         def sync_command(message):
+            """مزامنة كاملة مع Binance"""
             if not self.is_authorized(message.chat.id):
                 return
                 
             try:
                 bot = SimpleTradeBot.get_instance()
+                
+                # إرسال رسالة الانتظار
+                wait_msg = self.bot.reply_to(message, "🔄 جاري المزامنة مع Binance...")
                 
                 # مزامنة كاملة مع Binance
                 synced_count = bot.trade_executor.sync_with_binance_positions()
@@ -341,24 +376,43 @@ class TelegramBotManager:
                 positions = bot.client.futures_account()['positions']
                 binance_positions = [p for p in positions if float(p['positionAmt']) != 0]
                 
+                # الحصول على الصفقات المحلية
+                local_trades = bot.trade_executor.get_active_trades()
+                
                 response_text = f"""
-🔄 <b>نتيجة المزامنة</b>
+🔄 <b>نتيجة المزامنة الكاملة</b>
 
 ✅ المزامنة: {synced_count} صفقة
 🗑️ التنظيف: {cleaned_count} صفقة
 📊 المواقع في Binance: {len(binance_positions)}
-📊 الصفقات المحلية: {len(bot.trade_executor.get_active_trades())}
+📊 الصفقات المحلية: {len(local_trades)}
 
-المزامنة مكتملة ✅
+<b>تفاصيل المواقع في Binance:</b>
                 """
                 
-                self.bot.reply_to(message, response_text, parse_mode='HTML')
+                if binance_positions:
+                    for position in binance_positions[:5]:  # عرض أول 5 مواقع فقط
+                        position_amt = float(position['positionAmt'])
+                        side = "LONG" if position_amt > 0 else "SHORT"
+                        response_text += f"\n• {position['symbol']} ({side}) - {abs(position_amt):.4f}"
+                else:
+                    response_text += "\n• لا توجد مواقع مفتوحة"
+                
+                response_text += f"\n\nالمزامنة مكتملة ✅"
+                
+                self.bot.edit_message_text(
+                    chat_id=message.chat.id,
+                    message_id=wait_msg.message_id,
+                    text=response_text,
+                    parse_mode='HTML'
+                )
                 
             except Exception as e:
                 self.bot.reply_to(message, f"❌ خطأ في المزامنة: {str(e)}")
         
         @self.bot.message_handler(commands=['balance'])
         def balance_command(message):
+            """معلومات الرصيد والحساب"""
             if not self.is_authorized(message.chat.id):
                 return
                 
@@ -372,6 +426,9 @@ class TelegramBotManager:
                 # الحصول على معلومات الحساب
                 account_info = bot.client.futures_account()
                 
+                # الحصول على الصفقات النشطة
+                active_trades = bot.trade_executor.get_active_trades()
+                
                 balance_text = f"""
 💰 <b>حالة الرصيد والحساب</b>
 
@@ -383,7 +440,10 @@ class TelegramBotManager:
 🎯 الهامش المحجوز: {float(account_info.get('totalInitialMargin', 0)):.2f} USDT
 📈 PnL غير المحقق: {float(account_info.get('totalUnrealizedProfit', 0)):.2f} USDT
 
-الحد الأدنى المطلوب: {TRADING_SETTINGS['min_balance_required']} USDT
+📊 الصفقات النشطة: {len(active_trades)}
+💵 الحد الأدنى المطلوب: {TRADING_SETTINGS['min_balance_required']} USDT
+
+🕒 الوقت: {datetime.now(damascus_tz).strftime('%H:%M:%S')}
                 """
                 
                 self.bot.reply_to(message, balance_text, parse_mode='HTML')
@@ -393,6 +453,7 @@ class TelegramBotManager:
         
         @self.bot.message_handler(commands=['trades'])
         def trades_command(message):
+            """عرض الصفقات النشطة"""
             if not self.is_authorized(message.chat.id):
                 return
                 
@@ -409,15 +470,22 @@ class TelegramBotManager:
 
                 """
                 
+                total_pnl = 0
                 for trade_id, trade in active_trades.items():
                     current_price = trade.get('current_price', trade['entry_price'])
                     if trade['side'] == 'LONG':
                         pnl_pct = (current_price - trade['entry_price']) / trade['entry_price'] * 100
+                        pnl_usd = (current_price - trade['entry_price']) * trade['quantity']
                     else:
                         pnl_pct = (trade['entry_price'] - current_price) / trade['entry_price'] * 100
+                        pnl_usd = (trade['entry_price'] - current_price) * trade['quantity']
+                    
+                    total_pnl += pnl_usd
                     
                     trade_age = (datetime.now(damascus_tz) - trade['timestamp'])
                     age_minutes = trade_age.seconds // 60
+                    
+                    pnl_emoji = "🟢" if pnl_pct > 0 else "🔴"
                     
                     trades_text += f"""
 🔹 <b>{trade['symbol']}</b> ({trade['side']})
@@ -425,10 +493,12 @@ class TelegramBotManager:
    📊 المستوى: {trade['trade_level']}
    💰 الدخول: ${trade['entry_price']:.4f}
    📈 الحالي: ${current_price:.4f}
-   🎯 PnL: <b>{pnl_pct:+.2f}%</b>
+   {pnl_emoji} PnL: <b>{pnl_pct:+.2f}% (${pnl_usd:+.2f})</b>
    ⏰ العمر: {age_minutes} دقيقة
    📅 البدء: {trade['timestamp'].strftime('%H:%M')}
                     """
+                
+                trades_text += f"\n💰 <b>إجمالي PnL غير المحقق: ${total_pnl:+.2f}</b>"
                 
                 self.bot.reply_to(message, trades_text, parse_mode='HTML')
                 
@@ -437,6 +507,7 @@ class TelegramBotManager:
         
         @self.bot.message_handler(commands=['positions'])
         def positions_command(message):
+            """المواقع المفتوحة في Binance"""
             if not self.is_authorized(message.chat.id):
                 return
                 
@@ -456,6 +527,7 @@ class TelegramBotManager:
 
                 """
                 
+                total_unrealized = 0
                 for position in active_positions:
                     position_amt = float(position['positionAmt'])
                     side = "LONG" if position_amt > 0 else "SHORT"
@@ -463,14 +535,20 @@ class TelegramBotManager:
                     unrealized_pnl = float(position['unrealizedProfit'])
                     leverage = int(position['leverage'])
                     
+                    total_unrealized += unrealized_pnl
+                    
+                    pnl_emoji = "🟢" if unrealized_pnl > 0 else "🔴"
+                    
                     positions_text += f"""
 🔹 <b>{position['symbol']}</b> ({side})
    📊 الكمية: {abs(position_amt):.4f}
    💰 سعر الدخول: ${entry_price:.4f}
-   📈 PnL غير محقق: ${unrealized_pnl:.4f}
+   {pnl_emoji} PnL غير محقق: <b>${unrealized_pnl:.4f}</b>
    ⚡ الرافعة: {leverage}x
    🎯 الهامش: ${float(position['initialMargin']):.4f}
                     """
+                
+                positions_text += f"\n💰 <b>إجمالي PnL غير المحقق: ${total_unrealized:+.4f}</b>"
                 
                 self.bot.reply_to(message, positions_text, parse_mode='HTML')
                 
@@ -479,6 +557,7 @@ class TelegramBotManager:
         
         @self.bot.message_handler(commands=['history'])
         def history_command(message):
+            """سجل الصفقات المغلقة"""
             if not self.is_authorized(message.chat.id):
                 return
                 
@@ -490,23 +569,29 @@ class TelegramBotManager:
                     self.bot.reply_to(message, "✅ لا توجد صفقات مغلقة في السجل")
                     return
                 
-                # عرض آخر 5 صفقات مغلقة
-                recent_history = history[-5:]
+                # عرض آخر 10 صفقات مغلقة
+                recent_history = history[-10:]
                 history_text = f"""
 📋 <b>آخر {len(recent_history)} صفقة مغلقة</b>
 
                 """
                 
+                total_pnl = 0
                 for trade in recent_history:
                     pnl_emoji = "🟢" if trade.get('pnl_pct', 0) > 0 else "🔴"
+                    pnl_usd = trade.get('pnl_usd', 0)
+                    total_pnl += pnl_usd
+                    
                     history_text += f"""
 🔹 {trade['symbol']} ({trade['side']})
    💰 الدخول: ${trade['entry_price']:.4f}
    📈 الخروج: ${trade.get('close_price', 0):.4f}
-   {pnl_emoji} PnL: {trade.get('pnl_pct', 0):+.2f}% (${trade.get('pnl_usd', 0):+.2f})
+   {pnl_emoji} PnL: {trade.get('pnl_pct', 0):+.2f}% (${pnl_usd:+.2f})
    ⏰ السبب: {trade.get('close_reason', 'غير معروف')}
    📅 الإغلاق: {trade.get('close_time', trade['timestamp']).strftime('%H:%M')}
                     """
+                
+                history_text += f"\n💰 <b>إجمالي الربح/الخسارة: ${total_pnl:+.2f}</b>"
                 
                 self.bot.reply_to(message, history_text, parse_mode='HTML')
                 
@@ -515,6 +600,7 @@ class TelegramBotManager:
         
         @self.bot.message_handler(commands=['settings'])
         def settings_command(message):
+            """عرض إعدادات التداول"""
             if not self.is_authorized(message.chat.id):
                 return
                 
@@ -535,6 +621,9 @@ class TelegramBotManager:
 • LEVEL_2 (66-80%): تخصيص 75%  
 • LEVEL_3 (81-100%): تخصيص 99%
 
+🎯 <b>العملات المدعومة:</b>
+{', '.join(TRADING_SETTINGS['symbols'])}
+
 🕒 آخر تحديث: {datetime.now(damascus_tz).strftime('%H:%M:%S')}
                 """
                 
@@ -545,6 +634,7 @@ class TelegramBotManager:
         
         @self.bot.message_handler(commands=['symbols'])
         def symbols_command(message):
+            """العملات المدعومة"""
             if not self.is_authorized(message.chat.id):
                 return
                 
@@ -561,12 +651,13 @@ class TelegramBotManager:
         
         @self.bot.message_handler(commands=['signals'])
         def signals_command(message):
+            """آخر الإشارات المستلمة"""
             if not self.is_authorized(message.chat.id):
                 return
                 
             try:
                 bot = SimpleTradeBot.get_instance()
-                recent_signals = bot.signal_receiver.get_recent_signals(5)
+                recent_signals = bot.signal_receiver.get_recent_signals(10)
                 
                 if not recent_signals:
                     self.bot.reply_to(message, "✅ لا توجد إشارات حديثة")
@@ -577,9 +668,14 @@ class TelegramBotManager:
 
                 """
                 
+                success_count = 0
                 for signal in recent_signals:
                     status_emoji = "✅" if signal.get('processed') else "⏳"
                     result = signal.get('result', 'غير معالج')
+                    
+                    if signal.get('processed') and signal.get('result') == 'SUCCESS':
+                        success_count += 1
+                    
                     signals_text += f"""
 {status_emoji} {signal['symbol']} ({signal['direction']})
    📊 الثقة: {signal['confidence_score']}%
@@ -588,10 +684,239 @@ class TelegramBotManager:
    ⏰ الوقت: {signal.get('received_time', datetime.now(damascus_tz)).strftime('%H:%M')}
                     """
                 
+                signals_text += f"\n📈 <b>معدل النجاح: {success_count}/{len(recent_signals)}</b>"
+                
                 self.bot.reply_to(message, signals_text, parse_mode='HTML')
                 
             except Exception as e:
                 self.bot.reply_to(message, f"❌ خطأ في جلب الإشارات: {str(e)}")
+
+        @self.bot.message_handler(commands=['force_close'])
+        def force_close_command(message):
+            """إغلاق إجباري لعملة محددة"""
+            if not self.is_authorized(message.chat.id):
+                return
+                
+            try:
+                command_parts = message.text.split()
+                if len(command_parts) < 2:
+                    self.bot.reply_to(message,
+                        "❌ يرجى تحديد رمز العملة\n"
+                        "مثال: <code>/force_close BNBUSDT</code>",
+                        parse_mode='HTML'
+                    )
+                    return
+                
+                symbol = command_parts[1].upper()
+                bot = SimpleTradeBot.get_instance()
+                
+                # البحث عن الصفقات النشطة لهذه العملة
+                active_trades = bot.trade_executor.get_active_trades()
+                symbol_trades = {tid: trade for tid, trade in active_trades.items() 
+                               if trade['symbol'] == symbol and trade['status'] == 'open'}
+                
+                if not symbol_trades:
+                    self.bot.reply_to(message, f"✅ لا توجد صفقات نشطة لـ {symbol}")
+                    return
+                
+                # إغلاق جميع الصفقات
+                success_count = 0
+                failed_count = 0
+                
+                for trade_id in symbol_trades.keys():
+                    success, msg = bot.trade_executor.close_trade(trade_id, f"إغلاق إجباري بأمر Telegram")
+                    if success:
+                        success_count += 1
+                    else:
+                        failed_count += 1
+                
+                result_text = f"""
+🔒 <b>نتيجة الإغلاق الإجباري لـ {symbol}</b>
+
+✅ تم بنجاح: {success_count} صفقة
+❌ فشل: {failed_count} صفقة
+📊 الإجمالي: {len(symbol_trades)} صفقة
+
+تمت العملية 🎯
+                """
+                
+                self.bot.reply_to(message, result_text, parse_mode='HTML')
+                
+            except Exception as e:
+                self.bot.reply_to(message, f"❌ خطأ في الإغلاق الإجباري: {str(e)}")
+
+        @self.bot.message_handler(commands=['check_symbol'])
+        def check_symbol_command(message):
+            """فحص حالة عملة محددة"""
+            if not self.is_authorized(message.chat.id):
+                return
+                
+            try:
+                command_parts = message.text.split()
+                if len(command_parts) < 2:
+                    self.bot.reply_to(message,
+                        "❌ يرجى تحديد رمز العملة\n"
+                        "مثال: <code>/check_symbol BNBUSDT</code>",
+                        parse_mode='HTML'
+                    )
+                    return
+                
+                symbol = command_parts[1].upper()
+                bot = SimpleTradeBot.get_instance()
+                
+                # الحصول على السعر الحالي
+                current_price = bot.trade_executor._get_current_price(symbol)
+                if not current_price:
+                    self.bot.reply_to(message, f"❌ لا يمكن الحصول على سعر {symbol}")
+                    return
+                
+                # البحث عن الصفقات النشطة
+                active_trades = bot.trade_executor.get_active_trades()
+                symbol_trades = {tid: trade for tid, trade in active_trades.items() 
+                               if trade['symbol'] == symbol and trade['status'] == 'open'}
+                
+                # التحقق من إمكانية التداول
+                can_trade_long, long_msg = bot.trade_executor.can_execute_trade(symbol, 'LONG')
+                can_trade_short, short_msg = bot.trade_executor.can_execute_trade(symbol, 'SHORT')
+                
+                check_text = f"""
+🔍 <b>فحص حالة {symbol}</b>
+
+💰 السعر الحالي: ${current_price:.4f}
+📊 الصفقات النشطة: {len(symbol_trades)}
+
+✅ يمكن فتح LONG: {'نعم' if can_trade_long else 'لا'}
+✅ يمكن فتح SHORT: {'نعم' if can_trade_short else 'لا'}
+
+<b>الصفقات النشطة:</b>
+                """
+                
+                if symbol_trades:
+                    for trade_id, trade in symbol_trades.items():
+                        if trade['side'] == 'LONG':
+                            pnl_pct = (current_price - trade['entry_price']) / trade['entry_price'] * 100
+                        else:
+                            pnl_pct = (trade['entry_price'] - current_price) / trade['entry_price'] * 100
+                        
+                        check_text += f"\n• {trade['side']} - PnL: {pnl_pct:+.2f}%"
+                else:
+                    check_text += "\n• لا توجد صفقات نشطة"
+                
+                self.bot.reply_to(message, check_text, parse_mode='HTML')
+                
+            except Exception as e:
+                self.bot.reply_to(message, f"❌ خطأ في فحص العملة: {str(e)}")
+
+        # معالجة الأزرار التفاعلية
+        @self.bot.callback_query_handler(func=lambda call: True)
+        def handle_callback(call):
+            """معالجة الأزرار التفاعلية"""
+            try:
+                if call.data == "confirm_close_all":
+                    self.bot.answer_callback_query(call.id, "جاري إغلاق جميع الصفقات...")
+                    self.execute_close_all(call.message)
+                elif call.data == "cancel_close_all":
+                    self.bot.answer_callback_query(call.id, "تم الإلغاء")
+                    self.bot.edit_message_text(
+                        chat_id=call.message.chat.id,
+                        message_id=call.message.message_id,
+                        text="❌ تم إلغاء الإغلاق الجماعي"
+                    )
+                elif call.data.startswith("confirm_close_symbol_"):
+                    symbol = call.data.replace("confirm_close_symbol_", "")
+                    self.bot.answer_callback_query(call.id, f"جاري إغلاق صفقات {symbol}...")
+                    self.execute_close_symbol(call.message, symbol)
+                elif call.data == "cancel_close_symbol":
+                    self.bot.answer_callback_query(call.id, "تم الإلغاء")
+                    self.bot.edit_message_text(
+                        chat_id=call.message.chat.id,
+                        message_id=call.message.message_id,
+                        text="❌ تم إلغاء الإغلاق"
+                    )
+                    
+            except Exception as e:
+                self.bot.answer_callback_query(call.id, f"❌ خطأ: {str(e)}")
+
+    def execute_close_all(self, message):
+        """تنفيذ الإغلاق الجماعي"""
+        try:
+            bot = SimpleTradeBot.get_instance()
+            active_trades = bot.trade_executor.get_active_trades()
+            
+            success_count = 0
+            failed_count = 0
+            results = []
+            
+            for trade_id, trade in active_trades.items():
+                success, msg = bot.trade_executor.close_trade(trade_id, "إغلاق جماعي بأمر Telegram")
+                if success:
+                    success_count += 1
+                else:
+                    failed_count += 1
+                    results.append(f"{trade['symbol']}: {msg}")
+            
+            result_text = f"""
+🔒 <b>نتيجة الإغلاق الجماعي</b>
+
+✅ تم بنجاح: {success_count} صفقة
+❌ فشل: {failed_count} صفقة
+📊 الإجمالي: {len(active_trades)} صفقة
+            """
+            
+            if results:
+                result_text += f"\n<b>تفاصيل الأخطاء:</b>\n" + "\n".join(results[:5])
+            
+            self.bot.edit_message_text(
+                chat_id=message.chat.id,
+                message_id=message.message_id,
+                text=result_text,
+                parse_mode='HTML'
+            )
+            
+        except Exception as e:
+            self.bot.edit_message_text(
+                chat_id=message.chat.id,
+                message_id=message.message_id,
+                text=f"❌ خطأ في الإغلاق الجماعي: {str(e)}"
+            )
+
+    def execute_close_symbol(self, message, symbol):
+        """تنفيذ إغلاق صفقات عملة محددة"""
+        try:
+            bot = SimpleTradeBot.get_instance()
+            active_trades = bot.trade_executor.get_active_trades()
+            
+            symbol_trades = {tid: trade for tid, trade in active_trades.items() 
+                           if trade['symbol'] == symbol and trade['status'] == 'open'}
+            
+            success_count = 0
+            for trade_id in symbol_trades.keys():
+                success, msg = bot.trade_executor.close_trade(trade_id, f"إغلاق {symbol} بأمر Telegram")
+                if success:
+                    success_count += 1
+            
+            result_text = f"""
+🔒 <b>نتيجة إغلاق صفقات {symbol}</b>
+
+✅ تم إغلاق: {success_count} من {len(symbol_trades)} صفقة
+📊 النسبة: {success_count/len(symbol_trades)*100:.1f}%
+
+تمت العملية 🎯
+            """
+            
+            self.bot.edit_message_text(
+                chat_id=message.chat.id,
+                message_id=message.message_id,
+                text=result_text,
+                parse_mode='HTML'
+            )
+            
+        except Exception as e:
+            self.bot.edit_message_text(
+                chat_id=message.chat.id,
+                message_id=message.message_id,
+                text=f"❌ خطأ في إغلاق صفقات {symbol}: {str(e)}"
+            )
 
     def is_authorized(self, user_id):
         """التحقق من صلاحية المستخدم"""
@@ -607,6 +932,7 @@ class TelegramBotManager:
             # إعادة المحاولة بعد 30 ثانية
             time.sleep(30)
             self.start_polling()
+   
 
 class PrecisionManager:
     """مدير دقة الأسعار والكميات فقط"""
@@ -753,7 +1079,7 @@ class MultiLevelTradeExecutor:
     def cleanup_pending_trades(self):
         """اكتشاف وتنظيف الصفقات المعلقة التي فشل تنفيذها في Binance"""
         try:
-           pending_trades = []
+            pending_trades = []
         
             # الحصول على جميع المواقع الفعلية من Binance
             positions = self.client.futures_account()['positions']
@@ -808,7 +1134,7 @@ class MultiLevelTradeExecutor:
         except Exception as e:
             logger.error(f"❌ خطأ في تنظيف الصفقات المعلقة: {e}")
             return 0
-
+    
     def start_periodic_cleanup(self):
         """بدء التنظيف الدوري للصفقات المغلقة والمعلقة"""
         def cleanup_loop():
