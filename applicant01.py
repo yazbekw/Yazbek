@@ -31,15 +31,15 @@ TRADING_SETTINGS = {
         #"BTCUSDT",
         #"ADAUSDT",
         #"AVAXUSDT",
-        #"DOTUSDT",
-        #"LINKUSDT"
+        "DOTUSDT",
+        "LINKUSDT"
     ],
-    'base_trade_amount': 2,  # 2 USD
-    'leverage': 75,  # 75x leverage
-    'position_size': 2 * 75,  # 150 USD position size
-    'max_simultaneous_trades': 2,  # Max 1 trade at same time
+    'base_trade_amount': 6,  # 2 USD
+    'leverage': 50,  # 75x leverage
+    'position_size': 6 * 50,  # 150 USD position size
+    'max_simultaneous_trades': 3,  # Max 1 trade at same time
     'max_trades_per_symbol': 1,  # Only 1 trade per symbol
-    'min_balance_required': 2,  # Minimum balance required
+    'min_balance_required': 12,  # Minimum balance required
 }
 
 # إزالة مستويات جني الأرباح التلقائية
