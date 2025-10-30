@@ -34,9 +34,9 @@ TRADING_SETTINGS = {
         "DOTUSDT",
         "LINKUSDT"
     ],
-    'base_trade_amount': 6,  # 2 USD
-    'leverage': 50,  # 75x leverage
-    'position_size': 6 * 50,  # 150 USD position size
+    'base_trade_amount': 8,  # 2 USD
+    'leverage': 40,  # 75x leverage
+    'position_size': 8 * 40,  # 150 USD position size
     'max_simultaneous_trades': 3,  # Max 1 trade at same time
     'max_trades_per_symbol': 1,  # Only 1 trade per symbol
     'min_balance_required': 12,  # Minimum balance required
