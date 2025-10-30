@@ -34,7 +34,7 @@ EXECUTE_TRADES = os.getenv("EXECUTE_TRADES", "false").lower() == "true"
 SCAN_INTERVAL = 600  # 30 دقيقة بين كل فحص
 HEARTBEAT_INTERVAL = 1800  # 30 دقيقة بين كل نبضة
 EXECUTOR_HEARTBEAT_INTERVAL = 3600  # ساعة بين كل نبضة للمنفذ
-CONFIDENCE_THRESHOLD = 35  # عتبة الثقة الأساسية
+CONFIDENCE_THRESHOLD = 32  # عتبة الثقة الأساسية
 
 # =============================================================================
 # النظام المحسن للأوزان وتقليل التضارب
@@ -119,8 +119,8 @@ ENHANCEMENT_SETTINGS = {
 SUPPORTED_COINS = {
     'eth': {'name': 'Ethereum', 'binance_symbol': 'ETHUSDT', 'symbol': 'ETH'},
     'bnb': {'name': 'Binance Coin', 'binance_symbol': 'BNBUSDT', 'symbol': 'BNB'},
-    'dot': {'name': 'Polkadot', 'binance_symbol': 'DOTUSDT', 'symbol': 'DOT'},
-    'link': {'name': 'Chainlink', 'binance_symbol': 'LINKUSDT', 'symbol': 'LINK'},
+    #'dot': {'name': 'Polkadot', 'binance_symbol': 'DOTUSDT', 'symbol': 'DOT'},
+    #'link': {'name': 'Chainlink', 'binance_symbol': 'LINKUSDT', 'symbol': 'LINK'},
 }
 
 TIMEFRAMES = ['1h', '15m']
