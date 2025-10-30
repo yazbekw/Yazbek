@@ -40,43 +40,47 @@ CONFIDENCE_THRESHOLD = 30  # عتبة الثقة الأساسية
 # النظام المحسن للأوزان وتقليل التضارب
 # =============================================================================
 
+# =============================================================================
+# النظام المحسن للأوزان وتقليل التضارب - الإصدار المعدل
+# =============================================================================
+
 ENHANCED_INDICATOR_WEIGHTS = {
     "MOMENTUM": {
-        "weight": 35,
+        "weight": 30,  # ⬇️ تقليل من 35 إلى 30
         "components": {
-            "rsi": 12,           # تقليل تأثير RSI المنفرد
-            "stochastic": 10,    # تقليل Stochastic  
-            "macd": 13,          # زيادة وزن MACD الأكثر استقراراً
+            "rsi": 10,           # ⬇️ تقليل من 12 إلى 10
+            "stochastic": 8,     # ⬇️ تقليل من 10 إلى 8  
+            "macd": 12,          # ⬇️ تقليل طفيف من 13 إلى 12
         }
     },
     "PRICE_ACTION": {
-        "weight": 30,
+        "weight": 25,  # ⬇️ تقليل من 30 إلى 25
         "components": {
-            "candle_patterns": 15,  # زيادة وزن أنماط الشموع
-            "moving_averages": 10,  # زيادة أهمية المتوسطات
-            "trend_strength": 5     # جديد: قوة الاتجاه
+            "candle_patterns": 12,  # ⬇️ تقليل من 15 إلى 12
+            "moving_averages": 8,   # ⬇️ تقليل من 10 إلى 8
+            "trend_strength": 5     # 🔄 ثابت
         }
     },
     "KEY_LEVELS": {
-        "weight": 25,
+        "weight": 20,  # ⬇️ تقليل من 25 إلى 20
         "components": {
-            "support_resistance": 10, # إعادة توازن
-            "fibonacci": 9,          # تقليل فيبوناتشي
-            "pivot_points": 6        # جديد: نقاط المحور
+            "support_resistance": 8,  # ⬇️ تقليل من 10 إلى 8
+            "fibonacci": 7,           # ⬇️ تقليل من 9 إلى 7
+            "pivot_points": 5         # ⬇️ تقليل من 6 إلى 5
         }
     },
     "VOLUME_CONFIRMATION": {
-        "weight": 25,
+        "weight": 15,  # ⬇️ تقليل من 25 إلى 15
         "components": {
-            "volume_trend": 15,      # زيادة وزن اتجاه الحجم
-            "volume_spike": 10       # جديد: قمم الحجم
+            "volume_trend": 9,   # ⬇️ تقليل من 15 إلى 9
+            "volume_spike": 6    # ⬇️ تقليل من 10 إلى 6
         }
     },
-    "TREND_ALIGNMENT": {             # قسم جديد كلياً
-        "weight": 15,
+    "TREND_ALIGNMENT": {
+        "weight": 10,  # ⬇️ تقليل من 15 إلى 10
         "components": {
-            "multi_timeframe": 8,    # محاذاة الإطارات الزمنية
-            "market_structure": 7    # هيكل السوق العام
+            "multi_timeframe": 5,  # ⬇️ تقليل من 8 إلى 5
+            "market_structure": 5  # ⬇️ تقليل من 7 إلى 5
         }
     }
 }
@@ -595,172 +599,126 @@ class AdvancedMarketAnalyzer:
         else:
             return "ranging"
 
-    def _calculate_trend_alignment_scores(self, prices: List[float]) -> Dict[str, int]:
-        """حساب نقاط محاذاة الاتجاه - تقليل التضارب"""
-        
-        if len(prices) < 20:
-            return {"top": 0, "bottom": 0}
-        
-        # تحليل الاتجاه متعدد الإطارات
-        short_trend = self._get_trend_direction(prices[-10:])
-        medium_trend = self._get_trend_direction(prices[-20:])
-        
-        top_score = 0
-        bottom_score = 0
-        
-        # مكافأة محاذاة الاتجاهات
-        if short_trend == "down" and medium_trend == "down":
-            top_score += 8  # الاتجاه هابط - تعزيز إشارات القمة
-        elif short_trend == "up" and medium_trend == "up":  
-            bottom_score += 8  # الاتجاه صاعد - تعزيز إشارات القاع
-        else:
-            # تضارب في الاتجاهات - تخفيف جميع الإشارات
-            top_score -= 3
-            bottom_score -= 3
-        
-        # تحليل هيكل السوق
-        market_structure = self._analyze_market_structure(prices)
-        if market_structure == "downtrend":
-            top_score += 4
-            bottom_score -= 2
-        elif market_structure == "uptrend":
-            bottom_score += 4  
-            top_score -= 2
-        
-        return {
-            "top": max(0, top_score),
-            "bottom": max(0, bottom_score)
-        }
-
     def _calculate_momentum_scores(self, indicators: Dict) -> Dict[str, int]:
-        """تحسين حساب نقاط الزخم لاستغلال النطاق الكامل (35 نقطة)"""
+        """تحسين حساب نقاط الزخم مع الأوزان الجديدة"""
         top_score = 0
         bottom_score = 0
-    
+
         rsi = indicators.get('rsi', 50)
         stoch = indicators.get('stochastic', {'k': 50, 'd': 50})
         macd = indicators.get('macd', {'histogram': 0})
-    
-        # RSI (12 نقطة كحد أقصى) - شروط أكثر دقة
-        if rsi > 82: top_score += 12
-        elif rsi > 77: top_score += 10
-        elif rsi > 72: top_score += 7
+
+        # RSI (10 نقطة كحد أقصى) - توزيع جديد
+        if rsi > 82: top_score += 10
+        elif rsi > 77: top_score += 8
+        elif rsi > 72: top_score += 6
         elif rsi > 67: top_score += 4
         elif rsi > 62: top_score += 2
-    
-        if rsi < 18: bottom_score += 12
-        elif rsi < 23: bottom_score += 10
-        elif rsi < 28: bottom_score += 7
+
+        if rsi < 18: bottom_score += 10
+        elif rsi < 23: bottom_score += 8
+        elif rsi < 28: bottom_score += 6
         elif rsi < 33: bottom_score += 4
         elif rsi < 38: bottom_score += 2
-    
-        # Stochastic (12 نقطة كحد أقصى) - شروط متزامنة
+
+        # Stochastic (8 نقاط كحد أقصى) - توزيع جديد
         stoch_k = stoch.get('k', 50)
         stoch_d = stoch.get('d', 50)
-    
-        # تأكد من توافق K و D
-        if stoch_k > 88 and stoch_d > 85: top_score += 12
-        elif stoch_k > 83 and stoch_d > 80: top_score += 9
-        elif stoch_k > 78 and stoch_d > 75: top_score += 6
-        elif stoch_k > 73 and stoch_d > 70: top_score += 3
-        elif stoch_k > 68 and stoch_d > 65: top_score += 1
-    
-        if stoch_k < 12 and stoch_d < 15: bottom_score += 12
-        elif stoch_k < 17 and stoch_d < 20: bottom_score += 9
-        elif stoch_k < 22 and stoch_d < 25: bottom_score += 6
-        elif stoch_k < 27 and stoch_d < 30: bottom_score += 3
-        elif stoch_k < 32 and stoch_d < 35: bottom_score += 1
-    
-        # MACD (11 نقطة كحد أقصى) - مستويات أكثر دقة
+
+        if stoch_k > 88 and stoch_d > 85: top_score += 8
+        elif stoch_k > 83 and stoch_d > 80: top_score += 6
+        elif stoch_k > 78 and stoch_d > 75: top_score += 4
+        elif stoch_k > 73 and stoch_d > 70: top_score += 2
+
+        if stoch_k < 12 and stoch_d < 15: bottom_score += 8
+        elif stoch_k < 17 and stoch_d < 20: bottom_score += 6
+        elif stoch_k < 22 and stoch_d < 25: bottom_score += 4
+        elif stoch_k < 27 and stoch_d < 30: bottom_score += 2
+
+        # MACD (12 نقطة كحد أقصى) - توزيع جديد
         macd_hist = macd.get('histogram', 0)
         macd_line = macd.get('macd', 0)
         signal_line = macd.get('signal', 0)
-    
-        # تقاطع هابط قوي
-        if macd_hist < -0.03 and macd_line < signal_line: top_score += 11
-        elif macd_hist < -0.02 and macd_line < signal_line: top_score += 8
-        elif macd_hist < -0.01: top_score += 5
+
+        if macd_hist < -0.03 and macd_line < signal_line: top_score += 12
+        elif macd_hist < -0.02 and macd_line < signal_line: top_score += 9
+        elif macd_hist < -0.01: top_score += 6
         elif macd_hist < -0.005: top_score += 3
-        elif macd_hist < 0: top_score += 1
-    
-        # تقاطع صاعد قوي
-        if macd_hist > 0.03 and macd_line > signal_line: bottom_score += 11
-        elif macd_hist > 0.02 and macd_line > signal_line: bottom_score += 8
-        elif macd_hist > 0.01: bottom_score += 5
+
+        if macd_hist > 0.03 and macd_line > signal_line: bottom_score += 12
+        elif macd_hist > 0.02 and macd_line > signal_line: bottom_score += 9
+        elif macd_hist > 0.01: bottom_score += 6
         elif macd_hist > 0.005: bottom_score += 3
-        elif macd_hist > 0: bottom_score += 1
-    
-        safe_log_info(f"🔋 حساب الزخم - قمة: {top_score}/35, قاع: {bottom_score}/35 (RSI: {rsi}, Stoch K: {stoch_k}, MACD Hist: {macd_hist})", 
+
+        safe_log_info(f"🔋 حساب الزخم - قمة: {top_score}/30, قاع: {bottom_score}/30 (RSI: {rsi}, Stoch K: {stoch_k}, MACD Hist: {macd_hist})", 
                      "system", "momentum_calc")
-    
-        return {"top": min(top_score, 35), "bottom": min(bottom_score, 35)}    
-    
+
+        return {"top": min(top_score, 30), "bottom": min(bottom_score, 30)}
+
     def _calculate_price_action_scores(self, indicators: Dict, current_price: float) -> Dict[str, int]:
-        """تحسين حساب نقاط حركة السعر (30 نقطة)"""
+        """تحسين حساب نقاط حركة السعر مع الأوزان الجديدة"""
         top_score = 0
         bottom_score = 0
-    
+
         candle_pattern = indicators.get('candle_pattern', {})
         moving_averages = indicators.get('moving_averages', {})
         trend_analysis = indicators.get('trend_analysis', {})
-    
-        # أنماط الشموع (15 نقطة) - تعزيز القوة
+
+        # أنماط الشموع (12 نقطة) - توزيع جديد
         pattern_strength = candle_pattern.get('strength', 0)
         pattern_direction = candle_pattern.get('direction', 'none')
-    
+
         if pattern_direction == "top":
-            if pattern_strength >= 8: top_score += 15
-            elif pattern_strength >= 6: top_score += 12
-            elif pattern_strength >= 4: top_score += 8
-            elif pattern_strength >= 2: top_score += 4
+            if pattern_strength >= 8: top_score += 12
+            elif pattern_strength >= 6: top_score += 9
+            elif pattern_strength >= 4: top_score += 6
+            elif pattern_strength >= 2: top_score += 3
         elif pattern_direction == "bottom":
-            if pattern_strength >= 8: bottom_score += 15
-            elif pattern_strength >= 6: bottom_score += 12
-            elif pattern_strength >= 4: bottom_score += 8
-            elif pattern_strength >= 2: bottom_score += 4
-    
-        # المتوسطات المتحركة (10 نقاط) - تحليل متعمق
+            if pattern_strength >= 8: bottom_score += 12
+            elif pattern_strength >= 6: bottom_score += 9
+            elif pattern_strength >= 4: bottom_score += 6
+            elif pattern_strength >= 2: bottom_score += 3
+
+        # المتوسطات المتحركة (8 نقاط) - توزيع جديد
         ema_20 = moving_averages.get('ema_20', current_price)
         ema_50 = moving_averages.get('ema_50', current_price)
-    
-        # حساب المسافات النسبية
+
         distance_to_ema20 = abs(current_price - ema_20) / current_price
         distance_to_ema50 = abs(current_price - ema_50) / current_price
-    
-        # تحليل العلاقة مع المتوسطات
+
         below_ema20 = current_price < ema_20
         below_ema50 = current_price < ema_50
         above_ema20 = current_price > ema_20
         above_ema50 = current_price > ema_50
-    
+
         # قمة - السعر تحت المتوسطات
         if below_ema20 and below_ema50:
-            if distance_to_ema20 < 0.02 and distance_to_ema50 < 0.02: top_score += 10
-            elif distance_to_ema20 < 0.03 or distance_to_ema50 < 0.03: top_score += 7
-            else: top_score += 5
+            if distance_to_ema20 < 0.02 and distance_to_ema50 < 0.02: top_score += 8
+            elif distance_to_ema20 < 0.03 or distance_to_ema50 < 0.03: top_score += 6
+            else: top_score += 4
         elif below_ema20:
-            if distance_to_ema20 < 0.02: top_score += 6
+            if distance_to_ema20 < 0.02: top_score += 5
             else: top_score += 3
         elif below_ema50:
-            if distance_to_ema50 < 0.02: top_score += 4
+            if distance_to_ema50 < 0.02: top_score += 3
             else: top_score += 2
-    
+
         # قاع - السعر فوق المتوسطات
         if above_ema20 and above_ema50:
-            if distance_to_ema20 < 0.02 and distance_to_ema50 < 0.02: bottom_score += 10
-            elif distance_to_ema20 < 0.03 or distance_to_ema50 < 0.03: bottom_score += 7
-            else: bottom_score += 5
+            if distance_to_ema20 < 0.02 and distance_to_ema50 < 0.02: bottom_score += 8
+            elif distance_to_ema20 < 0.03 or distance_to_ema50 < 0.03: bottom_score += 6
+            else: bottom_score += 4
         elif above_ema20:
-            if distance_to_ema20 < 0.02: bottom_score += 6
+            if distance_to_ema20 < 0.02: bottom_score += 5
             else: bottom_score += 3
         elif above_ema50:
-            if distance_to_ema50 < 0.02: bottom_score += 4
+            if distance_to_ema50 < 0.02: bottom_score += 3
             else: bottom_score += 2
-    
-        # قوة الاتجاه (5 نقاط) - تحسين التقييم
+
+        # قوة الاتجاه (5 نقاط) - توزيع جديد
         trend = trend_analysis.get('trend', 'neutral')
         trend_strength = trend_analysis.get('strength', 0)
-    
+
         if trend == "bearish":
             if trend_strength >= 8: top_score += 5
             elif trend_strength >= 6: top_score += 4
@@ -771,144 +729,165 @@ class AdvancedMarketAnalyzer:
             elif trend_strength >= 6: bottom_score += 4
             elif trend_strength >= 4: bottom_score += 3
             elif trend_strength >= 2: bottom_score += 2
-    
-        safe_log_info(f"📈 حساب حركة السعر - قمة: {top_score}/30, قاع: {bottom_score}/30 (نمط: {candle_pattern.get('pattern')}, اتجاه: {trend})", 
+
+        safe_log_info(f"📈 حساب حركة السعر - قمة: {top_score}/25, قاع: {bottom_score}/25 (نمط: {candle_pattern.get('pattern')}, اتجاه: {trend})", 
                      "system", "price_action_calc")
-    
-        return {"top": min(top_score, 30), "bottom": min(bottom_score, 30)}    
-    
+
+        return {"top": min(top_score, 25), "bottom": min(bottom_score, 25)}
+
     def _calculate_key_levels_scores(self, indicators: Dict) -> Dict[str, int]:
-        """تحسين حساب نقاط المستويات الرئيسية (25 نقطة)"""
+        """تحسين حساب نقاط المستويات الرئيسية مع الأوزان الجديدة"""
         top_score = 0
         bottom_score = 0
-    
+
         support_resistance = indicators.get('support_resistance', {})
         fibonacci = indicators.get('fibonacci', {})
         pivot_points = indicators.get('pivot_points', {})
-    
-        # الدعم والمقاومة (15 نقطة) - تعزيز التقييم
+
+        # الدعم والمقاومة (8 نقطة) - توزيع جديد
         sr_direction = support_resistance.get('direction', 'none')
         sr_strength = support_resistance.get('strength', 0)
         sr_distance = support_resistance.get('distance_percent', 1.0)
-    
+
         if sr_direction == "top":
-            if sr_strength >= 8 and sr_distance < 0.02: top_score += 15
-            elif sr_strength >= 6 and sr_distance < 0.025: top_score += 12
-            elif sr_strength >= 4 and sr_distance < 0.03: top_score += 8
-            elif sr_strength >= 2 and sr_distance < 0.035: top_score += 5
-            elif sr_strength > 0: top_score += 2
+            if sr_strength >= 8 and sr_distance < 0.02: top_score += 8
+            elif sr_strength >= 6 and sr_distance < 0.025: top_score += 6
+            elif sr_strength >= 4 and sr_distance < 0.03: top_score += 4
+            elif sr_strength >= 2 and sr_distance < 0.035: top_score += 2
         elif sr_direction == "bottom":
-            if sr_strength >= 8 and sr_distance < 0.02: bottom_score += 15
-            elif sr_strength >= 6 and sr_distance < 0.025: bottom_score += 12
-            elif sr_strength >= 4 and sr_distance < 0.03: bottom_score += 8
-            elif sr_strength >= 2 and sr_distance < 0.035: bottom_score += 5
-            elif sr_strength > 0: bottom_score += 2
-    
-        # فيبوناتشي (7 نقاط) - تقييم أكثر دقة
+            if sr_strength >= 8 and sr_distance < 0.02: bottom_score += 8
+            elif sr_strength >= 6 and sr_distance < 0.025: bottom_score += 6
+            elif sr_strength >= 4 and sr_distance < 0.03: bottom_score += 4
+            elif sr_strength >= 2 and sr_distance < 0.035: bottom_score += 2
+
+        # فيبوناتشي (7 نقاط) - توزيع جديد
         fib_strength = fibonacci.get('strength', 0)
         fib_level = fibonacci.get('closest_level')
         fib_distance = fibonacci.get('distance', 1.0)
-    
-        # مستويات المقاومة (قمة)
+
         if fib_level in ['0.618', '0.786', '1.0']:
             if fib_strength >= 6 and fib_distance < 0.015: top_score += 7
             elif fib_strength >= 4 and fib_distance < 0.02: top_score += 5
             elif fib_strength >= 2 and fib_distance < 0.025: top_score += 3
-            elif fib_strength > 0: top_score += 1
-    
-        # مستويات الدعم (قاع)
         elif fib_level in ['0.0', '0.236', '0.382']:
             if fib_strength >= 6 and fib_distance < 0.015: bottom_score += 7
             elif fib_strength >= 4 and fib_distance < 0.02: bottom_score += 5
             elif fib_strength >= 2 and fib_distance < 0.025: bottom_score += 3
-            elif fib_strength > 0: bottom_score += 1
-    
-        # نقاط المحور (3 نقاط) - تحسين الدقة
+
+        # نقاط المحور (5 نقاط) - توزيع جديد
         current_price = support_resistance.get('current_price', 0)
         if pivot_points and current_price > 0:
             pivot = pivot_points.get('pivot', current_price)
             r1 = pivot_points.get('r1', current_price)
             s1 = pivot_points.get('s1', current_price)
-        
-            # حساب المسافات النسبية
+    
             distance_to_r1 = abs(current_price - r1) / current_price
             distance_to_s1 = abs(current_price - s1) / current_price
-            distance_to_pivot = abs(current_price - pivot) / current_price
-        
-            # قرب مستويات المقاومة (قمة)
-            if distance_to_r1 < 0.008: top_score += 3
-            elif distance_to_r1 < 0.015: top_score += 2
+    
+            if distance_to_r1 < 0.008: top_score += 5
+            elif distance_to_r1 < 0.015: top_score += 3
             elif distance_to_r1 < 0.025: top_score += 1
-        
-            # قرب مستويات الدعم (قاع)
-            if distance_to_s1 < 0.008: bottom_score += 3
-            elif distance_to_s1 < 0.015: bottom_score += 2
+    
+            if distance_to_s1 < 0.008: bottom_score += 5
+            elif distance_to_s1 < 0.015: bottom_score += 3
             elif distance_to_s1 < 0.025: bottom_score += 1
-        
-            # قرب نقطة المحور (محايد لكن يعطي معلومات)
-            if distance_to_pivot < 0.01:
-                top_score += 1
-                bottom_score += 1
-    
-        safe_log_info(f"🎯 حساب المستويات - قمة: {top_score}/25, قاع: {bottom_score}/25 (الدعم/مقاومة: {sr_strength}, فيبوناتشي: {fib_level})", 
+
+        safe_log_info(f"🎯 حساب المستويات - قمة: {top_score}/20, قاع: {bottom_score}/20 (الدعم/مقاومة: {sr_strength}, فيبوناتشي: {fib_level})", 
                      "system", "key_levels_calc")
-    
-        return {"top": min(top_score, 25), "bottom": min(bottom_score, 25)}    
-    
+
+        return {"top": min(top_score, 20), "bottom": min(bottom_score, 20)}
+
     def _calculate_volume_scores(self, indicators: Dict, signal_type: str) -> Dict[str, int]:
-        """حساب نقاط الحجم مع النظام الجديد"""
+        """حساب نقاط الحجم مع الأوزان الجديدة"""
         top_score = 0
         bottom_score = 0
-        
+    
         volume_data = indicators.get('volume_trend', {})
         volume_strength = volume_data.get('strength', 0)
-        
-        # اتجاه الحجم (15 نقطة)
+    
+        # اتجاه الحجم (9 نقاط) - توزيع جديد
         if signal_type == "top":
-            top_score += min(15, volume_strength)
+            top_score += min(9, volume_strength)
         else:
-            bottom_score += min(15, volume_strength)
-        
-        # قمم الحجم (10 نقاط)
+            bottom_score += min(9, volume_strength)
+    
+        # قمم الحجم (6 نقاط) - توزيع جديد
         volume_spike_bonus = volume_data.get('volume_spike_bonus', 0)
         top_score += volume_spike_bonus
         bottom_score += volume_spike_bonus
-        
+    
         return {"top": top_score, "bottom": bottom_score}
 
+    def _calculate_trend_alignment_scores(self, prices: List[float]) -> Dict[str, int]:
+        """حساب نقاط محاذاة الاتجاه مع الأوزان الجديدة"""
+    
+        if len(prices) < 20:
+            return {"top": 0, "bottom": 0}
+    
+        short_trend = self._get_trend_direction(prices[-10:])
+        medium_trend = self._get_trend_direction(prices[-20:])
+    
+        top_score = 0
+        bottom_score = 0
+    
+        # محاذاة الاتجاهات (5 نقاط) - توزيع جديد
+        if short_trend == "down" and medium_trend == "down":
+            top_score += 5  # الاتجاه هابط - تعزيز إشارات القمة
+        elif short_trend == "up" and medium_trend == "up":  
+            bottom_score += 5  # الاتجاه صاعد - تعزيز إشارات القاع
+    
+        # هيكل السوق (5 نقاط) - توزيع جديد
+        market_structure = self._analyze_market_structure(prices)
+        if market_structure == "downtrend":
+            top_score += 3
+        elif market_structure == "uptrend":
+            bottom_score += 3
+    
+        return {
+            "top": min(top_score, 10),
+            "bottom": min(bottom_score, 10)
+        }
+        
+    
+          
+    
+                
+        
+        
+        
+    
     def calculate_enhanced_scores(self, indicators: Dict, current_price: float, prices: List[float], signal_type: str) -> Dict[str, Any]:
-        """نظام حساب محسن يستغل كامل النقاط بشكل صحيح"""
+        """نظام حساب محسن مع الأوزان الجديدة"""
     
         try:
-            # حساب النقاط من كل قسم
+            # حساب النقاط من كل قسم مع الأوزان المحدثة
             momentum_scores = self._calculate_momentum_scores(indicators)
             price_action_scores = self._calculate_price_action_scores(indicators, current_price)
             key_levels_scores = self._calculate_key_levels_scores(indicators)
             volume_scores = self._calculate_volume_scores(indicators, signal_type)
             trend_scores = self._calculate_trend_alignment_scores(prices)
-        
-            # تجميع النقاط الأساسية (الحد الأقصى النظري = 130 نقطة)
+    
+            # تجميع النقاط الأساسية (الحد الأقصى النظري = 100 نقطة)
             base_top_score = (momentum_scores["top"] + price_action_scores["top"] + 
                              key_levels_scores["top"] + volume_scores["top"] + trend_scores["top"])
-        
+    
             base_bottom_score = (momentum_scores["bottom"] + price_action_scores["bottom"] + 
                                key_levels_scores["bottom"] + volume_scores["bottom"] + trend_scores["bottom"])
-        
-            # تحويل النقاط إلى مقياس 0-100 مع استغلال كامل النطاق
-            max_possible_score = 130  # 35+30+25+25+15
-        
+    
+            # تحويل النقاط إلى مقياس 0-100 (نفس النظام)
+            max_possible_score = 100  # 30+25+20+15+10
+    
             scaled_top_score = int((base_top_score / max_possible_score) * 100)
             scaled_bottom_score = int((base_bottom_score / max_possible_score) * 100)
-        
+    
             # تطبيق وزن الجلسة على النتيجة المحولة
             session_weight = get_session_weight()
             final_top_score = int(scaled_top_score * session_weight)
             final_bottom_score = int(scaled_bottom_score * session_weight)
-        
-            # تسجيل تفاصيل الحساب للتتبع
-            safe_log_info(f"حساب النقاط المحسن - قاعدة: قمة={base_top_score}, قاع={base_bottom_score} -> محولة: قمة={scaled_top_score}, قاع={scaled_bottom_score} -> نهائية: قمة={final_top_score}, قاع={final_bottom_score} (وزن الجلسة: {session_weight})", 
+    
+            safe_log_info(f"حساب النقاط المحسن - قاعدة: قمة={base_top_score}, قاع={base_bottom_score} -> نهائية: قمة={final_top_score}, قاع={final_bottom_score} (وزن الجلسة: {session_weight})", 
                          "system", "score_calculation")
-        
+    
             return {
                 "top_score": min(final_top_score, 100),
                 "bottom_score": min(final_bottom_score, 100),
@@ -930,17 +909,14 @@ class AdvancedMarketAnalyzer:
                     }
                 }
             }
-        
+    
         except Exception as e:
             safe_log_error(f"خطأ في حساب النقاط المحسن: {e}", "system", "score_calculation")
             return {
                 "top_score": 0,
                 "bottom_score": 0,
                 "breakdown": {}
-            }
-        
-    
-        
+            }   
 
     def enhanced_conflict_filter(self, analysis: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """مرشح تضارب محسن يعتمد على النظام الجديد"""
