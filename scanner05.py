@@ -31,8 +31,8 @@ EXECUTOR_BOT_API_KEY = os.getenv("EXECUTOR_BOT_API_KEY", "")
 EXECUTE_TRADES = os.getenv("EXECUTE_TRADES", "false").lower() == "true"
 
 # إعدادات التداول المحسنة
-SCAN_INTERVAL = 600  # 30 دقيقة بين كل فحص
-HEARTBEAT_INTERVAL = 1800  # 30 دقيقة بين كل نبضة
+SCAN_INTERVAL = 180  # 30 دقيقة بين كل فحص
+HEARTBEAT_INTERVAL = 3600  # 30 دقيقة بين كل نبضة
 EXECUTOR_HEARTBEAT_INTERVAL = 3600  # ساعة بين كل نبضة للمنفذ
 CONFIDENCE_THRESHOLD = 35  # عتبة الثقة الأساسية
 
