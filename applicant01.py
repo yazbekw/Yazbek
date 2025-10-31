@@ -39,7 +39,7 @@ TRADING_SETTINGS = {
     'position_size': 6 * 50,  # 150 USD position size
     'max_simultaneous_trades': 2,  # Max 1 trade at same time
     'max_trades_per_symbol': 1,  # Only 1 trade per symbol
-    'min_balance_required': 6,  # Minimum balance required
+    'min_balance_required': 5,  # Minimum balance required
 }
 
 # إزالة مستويات جني الأرباح التلقائية
