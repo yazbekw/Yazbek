@@ -31,7 +31,7 @@ EXECUTOR_BOT_API_KEY = os.getenv("EXECUTOR_BOT_API_KEY", "")
 EXECUTE_TRADES = os.getenv("EXECUTE_TRADES", "false").lower() == "true"
 
 # إعدادات التداول المحسنة
-SCAN_INTERVAL = 180  # 30 دقيقة بين كل فحص
+SCAN_INTERVAL = 600  # 30 دقيقة بين كل فحص
 HEARTBEAT_INTERVAL = 3600  # 30 دقيقة بين كل نبضة
 EXECUTOR_HEARTBEAT_INTERVAL = 3600  # ساعة بين كل نبضة للمنفذ
 CONFIDENCE_THRESHOLD = 45  # عتبة الثقة الأساسية
@@ -1603,12 +1603,67 @@ class ExecutorBotClient:
 
 
 class BinanceDataFetcher:
-    """جلب البيانات من Binance - النسخة المحدثة"""
-    
     def __init__(self):
         self.client = httpx.AsyncClient(timeout=30.0)
         self.analyzer = AdvancedMarketAnalyzer()
         self.cache = {}
+        self.base_urls = [
+            "https://api.binance.com",
+            "https://api1.binance.com", 
+            "https://api2.binance.com",
+            "https://api3.binance.com"
+        ]
+        self.current_url_index = 0
+
+    async def _fetch_binance_data(self, symbol: str, interval: str) -> Dict[str, List[float]]:
+        """نسخة محسنة مع تبديل URLs وتجنب الحظر"""
+        
+        # تجنب الطلبات المتكررة باستخدام الكاش
+        cache_key = f"{symbol}_{interval}"
+        if cache_key in self.cache:
+            cache_data = self.cache[cache_key]
+            if time.time() - cache_data['timestamp'] < 300:  # 5 دقائق كاش
+                return cache_data['data']
+        
+        # تجربة جميع URLs بالتبادل
+        for attempt in range(len(self.base_urls)):
+            base_url = self.base_urls[self.current_url_index]
+            url = f"{base_url}/api/v3/klines?symbol={symbol}&interval={interval}&limit=50"  # تقليل الحد
+            
+            try:
+                safe_log_info(f"محاولة جلب البيانات من: {base_url}", symbol, "binance_retry")
+                
+                response = await self.client.get(url, timeout=15)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if data and len(data) > 0:
+                        result = {
+                            'prices': [float(item[4]) for item in data],
+                            'highs': [float(item[2]) for item in data],
+                            'lows': [float(item[3]) for item in data],
+                            'volumes': [float(item[5]) for item in data]
+                        }
+                        
+                        # تخزين في الكاش
+                        self.cache[cache_key] = {'data': result, 'timestamp': time.time()}
+                        
+                        safe_log_info(f"✅ تم جلب البيانات بنجاح من {base_url}", symbol, "binance")
+                        return result
+                
+                elif response.status_code == 429:  # Too Many Requests
+                    safe_log_warning(f"⏳ تجاوز الحد المسموح - الانتظار 10 ثواني", symbol, "binance")
+                    await asyncio.sleep(10)
+                    
+            except Exception as e:
+                safe_log_info(f"❌ فشل {base_url}: {e}", symbol, "binance")
+            
+            # تبديل إلى URL التالي
+            self.current_url_index = (self.current_url_index + 1) % len(self.base_urls)
+            await asyncio.sleep(2)  # انتظار بين المحاولات
+        
+        safe_log_error(f"❌ فشل جميع محاولات جلب البيانات لـ {symbol}", symbol, "binance")
+        return {'prices': [], 'highs': [], 'lows': [], 'volumes': []}
 
     async def get_coin_data(self, coin_data: Dict[str, str], timeframe: str) -> Dict[str, Any]:
         """جلب بيانات العملة للإطار الزمني المحدد"""
@@ -1666,25 +1721,7 @@ class BinanceDataFetcher:
                          coin_data['symbol'], "data_fetcher")
             return self._get_fallback_data()
 
-    async def _fetch_binance_data(self, symbol: str, interval: str) -> Dict[str, List[float]]:
-        """جلب البيانات من Binance API"""
-        url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit=100"
-        
-        try:
-            response = await self.client.get(url)
-            if response.status_code == 200:
-                data = response.json()
-                return {
-                    'prices': [float(item[4]) for item in data],  # Close prices
-                    'highs': [float(item[2]) for item in data],   # High prices
-                    'lows': [float(item[3]) for item in data],    # Low prices
-                    'volumes': [float(item[5]) for item in data]  # Volumes
-                }
-        except Exception as e:
-            safe_log_error(f"خطأ في جلب البيانات من Binance: {e}", symbol, "binance")
-        
-        return {'prices': [], 'highs': [], 'lows': [], 'volumes': []}
-
+    
     def _get_fallback_data(self) -> Dict[str, Any]:
         """بيانات افتراضية عند فشل الجلب"""
         return {
