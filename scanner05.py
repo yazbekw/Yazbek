@@ -34,7 +34,7 @@ EXECUTE_TRADES = os.getenv("EXECUTE_TRADES", "false").lower() == "true"
 SCAN_INTERVAL = 180  # 30 دقيقة بين كل فحص
 HEARTBEAT_INTERVAL = 3600  # 30 دقيقة بين كل نبضة
 EXECUTOR_HEARTBEAT_INTERVAL = 3600  # ساعة بين كل نبضة للمنفذ
-CONFIDENCE_THRESHOLD = 35  # عتبة الثقة الأساسية
+CONFIDENCE_THRESHOLD = 45  # عتبة الثقة الأساسية
 
 # =============================================================================
 # النظام المحسن للأوزان وتقليل التضارب
@@ -99,9 +99,9 @@ CONFLICT_MANAGEMENT = {
 # إعدادات نظام التأكيد المحسن
 PRIMARY_TIMEFRAME = '1h'
 CONFIRMATION_TIMEFRAME = '15m'
-CONFIRMATION_THRESHOLD = 25
+CONFIRMATION_THRESHOLD = 35
 CONFIRMATION_BONUS = 10
-MIN_CONFIRMATION_GAP = 3
+MIN_CONFIRMATION_GAP = 5
 
 # إعدادات تصفية الإشارات المتضاربة المحسنة
 MIN_SIGNAL_GAP = 8
@@ -110,8 +110,8 @@ CONFLICTING_SIGNAL_PENALTY = 15
 # إعدادات التحسينات الطفيفة المحسنة
 ENHANCEMENT_SETTINGS = {
     'ENABLE_QUICK_ENHANCE': True,
-    'MIN_STRENGTH_FOR_ENHANCE': 35,
-    'MAX_ENHANCEMENT_BONUS': 10,
+    'MIN_STRENGTH_FOR_ENHANCE': 40,
+    'MAX_ENHANCEMENT_BONUS': 5,
     'ENABLE_TREND_ALIGNMENT': True
 }
 
