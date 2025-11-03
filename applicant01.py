@@ -31,8 +31,8 @@ TRADING_SETTINGS = {
         #"BTCUSDT",
         #"ADAUSDT",
         #"AVAXUSDT",
-        "DOTUSDT",
-        "LINKUSDT"
+        #"DOTUSDT",
+        #"LINKUSDT"
     ],
     'base_trade_amount': 4,  # 2 USD
     'leverage': 50,  # 75x leverage
