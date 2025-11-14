@@ -115,8 +115,14 @@ ENHANCEMENT_SETTINGS = {
 SUPPORTED_COINS = {
     'eth': {'name': 'Ethereum', 'coinex_symbol': 'ETHUSDT', 'binance_symbol': 'ETHUSDT', 'symbol': 'ETH'},
     'bnb': {'name': 'Binance Coin', 'coinex_symbol': 'BNBUSDT', 'binance_symbol': 'BNBUSDT', 'symbol': 'BNB'},
+    'btc': {'name': 'Bitcoin', 'coinex_symbol': 'BTCUSDT', 'binance_symbol': 'BTCUSDT', 'symbol': 'BTC'},
+    'sol': {'name': 'Solana', 'coinex_symbol': 'SOLUSDT', 'binance_symbol': 'SOLUSDT', 'symbol': 'SOL'},
+    'xrp': {'name': 'Ripple', 'coinex_symbol': 'XRPUSDT', 'binance_symbol': 'XRPUSDT', 'symbol': 'XRP'},
+    'ada': {'name': 'Cardano', 'coinex_symbol': 'ADAUSDT', 'binance_symbol': 'ADAUSDT', 'symbol': 'ADA'},
+    'avax': {'name': 'Avalanche', 'coinex_symbol': 'AVAXUSDT', 'binance_symbol': 'AVAXUSDT', 'symbol': 'AVAX'},
+    'dot': {'name': 'Polkadot', 'coinex_symbol': 'DOTUSDT', 'binance_symbol': 'DOTUSDT', 'symbol': 'DOT'},
+    'link': {'name': 'Chainlink', 'coinex_symbol': 'LINKUSDT', 'binance_symbol': 'LINKUSDT', 'symbol': 'LINK'},
 }
-
 TIMEFRAMES = ['1h', '15m']
 
 # توقيت سوريا (GMT+3)
