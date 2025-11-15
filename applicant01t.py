@@ -37,12 +37,12 @@ TRADING_SETTINGS = {
         "DOTUSDT",
         "LINKUSDT"
     ],
-    'base_trade_amount': 100,  # 4 USD
-    'leverage': 5,  # 50x leverage
-    'position_size': 100 * 5,  # 200 USD position size
-    'max_simultaneous_trades': 5,  # Max 2 trade at same time
-    'max_trades_per_symbol': 2,  # Only 1 trade per symbol
-    'min_balance_required': 200,  # Minimum balance required
+    'base_trade_amount': 400,  # 4 USD
+    'leverage': 10,  # 50x leverage
+    'position_size': 400 * 5,  # 200 USD position size
+    'max_simultaneous_trades': 8,  # Max 2 trade at same time
+    'max_trades_per_symbol': 1,  # Only 1 trade per symbol
+    'min_balance_required': 1000,  # Minimum balance required
 }
 
 # ضبط التوقيت
