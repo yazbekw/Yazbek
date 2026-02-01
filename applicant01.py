@@ -36,6 +36,7 @@ TRADING_SETTINGS = {
     ],
     'base_trade_amount': 4,  # 2 USD
     'leverage': 50,  # 75x leverage
+    'stop_loss_percent': 7.5,
     'position_size': 4 * 50,  # 150 USD position size
     'max_simultaneous_trades': 2,  # Max 1 trade at same time
     'max_trades_per_symbol': 1,  # Only 1 trade per symbol
@@ -2261,23 +2262,64 @@ def main():
             bot.notifier.send_message(message)
         
         # الحلقة الرئيسية المبسطة - بدون تتبع تلقائي
+        # ────────────────────────────────────────────────
+        # الحلقة الرئيسية - مع إضافة وقف خسارة دوري
+        # ────────────────────────────────────────────────
         while True:
             try:
-                # فقط تسجيل الصفقات النشطة بدون أي تتبع تلقائي
                 active_trades = bot.trade_executor.get_active_trades()
+        
                 if active_trades:
-                    logger.info(f"📊 الصفقات النشطة: {len(active_trades)}/{TRADING_SETTINGS['max_simultaneous_trades']}")
-                time.sleep(30)  # فحص كل 30 ثانية فقط للتسجيل
+                    logger.info(f"📊 الصفقات النشطة: {len(active_trades)} / {TRADING_SETTINGS['max_simultaneous_trades']}")
+            
+                    # ─── مراقبة وقف الخسارة لكل صفقة مفتوحة ───
+                    for trade_id, trade in list(active_trades.items()):
+                        try:
+                            symbol = trade['symbol']
+                            side = trade['side']          # 'LONG' أو 'SHORT'
+                            entry_price = float(trade['entry_price'])
+                            position_amt = float(trade.get('quantity', 0))
+                    
+                            if position_amt == 0:
+                                continue
+                    
+                            # جلب السعر الحالي
+                            ticker = client.futures_symbol_ticker(symbol=symbol)
+                            current_price = float(ticker['price'])
+                    
+                            time.sleep(0.35)   # تأخير صغير لتجنب rate limit
+                    
+                            # ─── حساب نسبة التغير ───
+                            if side == 'LONG':
+                                price_change_pct = (current_price - entry_price) / entry_price * 100
+                                if price_change_pct <= -TRADING_SETTINGS['stop_loss_percent']:
+                                    logger.warning(f"🛑 STOP LOSS HIT → {symbol} LONG | تغير: {price_change_pct:.2f}%")
+                                    bot.trade_executor.close_position(symbol, 'SELL', reduceOnly=True)
+                                    send_telegram_message(f"🛑 وقف خسارة تم تنفيذه\n{symbol} LONG\nالسعر: {current_price}\nالتغير: {price_change_pct:.2f}%")
+                                    continue
+                    
+                            elif side == 'SHORT':
+                                price_change_pct = (entry_price - current_price) / entry_price * 100
+                                if price_change_pct <= -TRADING_SETTINGS['stop_loss_percent']:
+                                    logger.warning(f"🛑 STOP LOSS HIT → {symbol} SHORT | تغير: {price_change_pct:.2f}%")
+                                    bot.trade_executor.close_position(symbol, 'BUY', reduceOnly=True)
+                                    send_telegram_message(f"🛑 وقف خسارة تم تنفيذه\n{symbol} SHORT\nالسعر: {current_price}\nالتغير: {price_change_pct:.2f}%")
+                                    continue
                 
+                        except Exception as inner_e:
+                            logger.error(f"خطأ أثناء فحص وقف الخسارة لـ {trade.get('symbol','?')}: {inner_e}")
+                            time.sleep(1)
+        
+                # تأخير الحلقة الكلية (يمكنك تعديله بين 10–60 ثانية)
+                time.sleep(20)
+    
             except KeyboardInterrupt:
                 logger.info("⏹️ إيقاف البوت يدوياً...")
                 break
+    
             except Exception as e:
                 logger.error(f"❌ خطأ في الحلقة الرئيسية: {e}")
                 time.sleep(30)
-                
-    except Exception as e:
-        logger.error(f"❌ فشل تشغيل البوت: {e}")
 
 if __name__ == "__main__":
     main()
