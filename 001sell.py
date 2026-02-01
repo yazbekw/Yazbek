@@ -189,288 +189,185 @@ def safe_log_error(message: str):
         print(f"خطأ في تسجيل الخطأ: {e} - الرسالة: {message}")
 
 # ====================== إشعارات التلغرام ======================
+
+import os
+import asyncio
+import httpx
+import requests
+from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
+
 class TelegramNotifier:
-    """إشعارات التلغرام للإشارات المكتشفة"""
+    """
+    كلاس الإشعارات - يحافظ على الأسماء القديمة مع إضافة دعم ntfy كقناة إضافية
+    """
     
-    def __init__(self, token: str, chat_id: str):
-        self.token = token
-        self.chat_id = chat_id
-        self.base_url = f"https://api.telegram.org/bot{token}"
-
-    async def send_signal_alert(self, signal_data: Dict[str, Any]) -> bool:
-        """إرسال تنبيه إشارة بيع عبر التلغرام"""
-        if not ENABLE_TELEGRAM_ALERTS or not self.token or not self.chat_id:
-            return False
-            
-        try:
-            message = self._build_sell_signal_message(signal_data)
-            
-            payload = {
-                'chat_id': self.chat_id,
-                'text': message,
-                'parse_mode': 'Markdown',
-                'disable_web_page_preview': True
-            }
-            
-            async with httpx.AsyncClient() as client:
-                response = await client.post(f"{self.base_url}/sendMessage", 
-                                           json=payload, timeout=10.0)
-            
-            if response.status_code == 200:
-                safe_log_info(f"تم إرسال تنبيه البيع للتلغرام لإشارة {signal_data['symbol']}")
-                return True
-            else:
-                safe_log_error(f"فشل إرسال تنبيه التلغرام: {response.status_code}")
-                return False
-
-            # ─── إرسال إضافي عبر ntfy ───
-            if ENABLE_NTFY:
-                strength = signal_data.get('analysis', {}).get('signal_strength', 5)
-                prio = 5 if strength >= 8 else 4
-                
-                short_msg = (
-                    f"{signal_data['symbol']} | سعر: {signal_data['price']:.2f}\n"
-                    f"قوة: {strength}/10 | {signal_data.get('reason', '')[:100]}..."
-                )
-                
-                send_ntfy(
-                    message=short_msg,
-                    title=f"إشارة بيع - {signal_data['symbol']}",
-                    priority=prio,
-                    tags="rotating_light,chart_falling"
-                )
-                
-        except Exception as e:
-            safe_log_error(f"خطأ في إرسال تنبيه التلغرام: {e}")
-            return False
-
-    async def send_heartbeat(self) -> bool:
-        """إرسال نبضة عن حالة النظام"""
-        if not ENABLE_TELEGRAM_ALERTS or not self.token or not self.chat_id:
-            return False
-            
-        try:
-            message = self._build_heartbeat_message()
-            
-            payload = {
-                'chat_id': self.chat_id,
-                'text': message,
-                'parse_mode': 'Markdown',
-                'disable_web_page_preview': True
-            }
-            
-            async with httpx.AsyncClient() as client:
-                response = await client.post(f"{self.base_url}/sendMessage", 
-                                           json=payload, timeout=10.0)
-            
-            if response.status_code == 200:
-                system_stats["last_heartbeat"] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                system_stats["heartbeats_sent"] += 1
-                safe_log_info("تم إرسال نبضة النظام بنجاح")
-                return True
-            else:
-                safe_log_error(f"فشل إرسال النبضة: {response.status_code}")
-                return False
-
-            # ─── نبضة ntfy إضافية (منخفضة الأولوية) ───
-            if ENABLE_NTFY:
-                send_ntfy(
-                    message="Heartbeat OK • ماسح البيع يعمل",
-                    title="نبضة النظام (sell scanner)",
-                    priority=2,
-                    tags="green_circle,clock"
-                )
-                
-        except Exception as e:
-            safe_log_error(f"خطأ في إرسال النبضة: {e}")
-            return False
-
-    async def send_startup_message(self) -> bool:
-        """إرسال رسالة بدء التشغيل"""
-        if not ENABLE_TELEGRAM_ALERTS or not self.token or not self.chat_id:
-            return False
-            
-        try:
-            message = self._build_startup_message()
-            
-            payload = {
-                'chat_id': self.chat_id,
-                'text': message,
-                'parse_mode': 'Markdown',
-                'disable_web_page_preview': True
-            }
-            
-            async with httpx.AsyncClient() as client:
-                response = await client.post(f"{self.base_url}/sendMessage", 
-                                           json=payload, timeout=10.0)
-            
-            if response.status_code == 200:
-                safe_log_info("تم إرسال رسالة بدء التشغيل بنجاح")
-                return True
-            else:
-                safe_log_error(f"فشل إرسال رسالة البدء: {response.status_code}")
-                return False
-
-            # ─── رسالة بدء ntfy ───
-            if ENABLE_NTFY:
-                send_ntfy(
-                    message="بدء تشغيل ماسح إشارات البيع v2.0",
-                    title="تشغيل النظام",
-                    priority=3,
-                    tags="rocket,gear"
-                )
-                
-        except Exception as e:
-            safe_log_error(f"خطأ في إرسال رسالة البدء: {e}")
-            return False
-
-    def _build_sell_signal_message(self, signal_data: Dict[str, Any]) -> str:
-        """بناء رسالة إشارة البيع"""
-        symbol = signal_data['symbol']
-        price = signal_data['price']
-        strength = signal_data['analysis']['signal_strength']
-        confidence = signal_data['confidence_score']
-        reason = signal_data['reason']
-        timeframe = signal_data['timeframe']
+    def __init__(self):
+        # Telegram
+        self.telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
+        self.telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID")
+        self.enable_telegram = bool(self.telegram_token and self.telegram_chat_id)
         
-        analysis = signal_data['analysis']
-        rsi = analysis.get('rsi', 0)
-        ema_fast = analysis.get('ema_fast', 0)
-        ema_slow = analysis.get('ema_slow', 0)
-        macd_hist = analysis.get('macd_histogram', 0)
-        volume_ratio = analysis.get('volume_ratio', 1.0)
-        market_regime = analysis.get('market_regime', 'NEUTRAL')
+        # ntfy
+        self.ntfy_topic = os.getenv("NTFY_TOPIC", "").strip()
+        self.enable_ntfy = bool(self.ntfy_topic)
         
-        action_emoji = "🔴"
-        action_text = "بيع"
-        action_type = "قمة سعرية"
-        
-        if strength >= 9:
-            strength_emoji = "💥💥💥"
-            strength_text = "قوية جداً"
-        elif strength >= 8:
-            strength_emoji = "💥💥"
-            strength_text = "قوية"
-        elif strength >= 7:
-            strength_emoji = "💥"
-            strength_text = "جيدة"
+        self._log_status()
+    
+    def _log_status(self):
+        parts = []
+        if self.enable_telegram:
+            parts.append("Telegram مفعّل")
         else:
-            strength_emoji = "⚡"
-            strength_text = "متوسطة"
+            parts.append("Telegram معطل (تحقق من التوكن والـ chat id)")
+            
+        if self.enable_ntfy:
+            parts.append(f"ntfy مفعّل (topic: {self.ntfy_topic[:8]}...)")
+        else:
+            parts.append("ntfy معطل (تحقق من NTFY_TOPIC)")
+            
+        logger.info("حالة الإشعارات: " + " | ".join(parts))
+    
+    async def _send_telegram(self, message: str, parse_mode: str = "HTML") -> bool:
+        """إرسال إلى Telegram (داخلي غير متزامن)"""
+        if not self.enable_telegram:
+            return False
+            
+        url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
+        payload = {
+            "chat_id": self.telegram_chat_id,
+            "text": message,
+            "parse_mode": parse_mode,
+            "disable_web_page_preview": True,
+        }
         
-        message = f"""
-{action_emoji} **إشارة {action_text} - {symbol}** {action_emoji}
-
-💰 **السعر الحالي:** `${price:,.4f}`
-⏰ **الإطار الزمني:** `{timeframe}`
-🎯 **نوع الإشارة:** `{action_type}`
-📊 **قوة الإشارة:** {strength_emoji} `{strength}/10` ({strength_text})
-🔢 **درجة الثقة:** `{confidence}%`
-
-📈 **المؤشرات الفنية:**
-• 📊 **RSI:** `{rsi:.2f}` {'(تشبع شرائي)' if rsi > 70 else '(تشبع بيعي)' if rsi < 30 else '(محايد)'}
-• 📈 **MACD Hist:** `{macd_hist:.6f}` {'(هابط)' if macd_hist < 0 else '(صاعد)'}
-• 📉 **EMA 9/21:** `{ema_fast:.4f}/{ema_slow:.4f}` {'(هابط)' if ema_fast < ema_slow else '(صاعد)'}
-• 🔊 **نسبة الحجم:** `{volume_ratio:.2f}x` {'(مرتفع)' if volume_ratio > 1.5 else '(طبيعي)'}
-• 🌐 **نظام السوق:** `{market_regime}`
-
-📝 **التفاصيل:** {reason}
-
-⏳ **الوقت:** `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`
-🔧 **المصدر:** `ماسح إشارات البيع v2.0`
-
-💡 **التوصية:** الدخول في صفقة بيع مع إدارة المخاطر
-⚠️ **التحذير:** هذه إشارة بيع فقط - لا توجد إشارات شراء في هذا البوت
-        """
+        async with httpx.AsyncClient() as client:
+            try:
+                r = await client.post(url, json=payload, timeout=10.0)
+                success = r.status_code == 200
+                if success:
+                    logger.info("تم إرسال الرسالة إلى Telegram")
+                else:
+                    logger.warning(f"فشل إرسال Telegram: {r.status_code} - {r.text[:100]}")
+                return success
+            except Exception as e:
+                logger.error(f"خطأ في إرسال Telegram: {e}")
+                return False
+    
+    def _send_ntfy(self, message: str, title: str = "إشعار", priority: int = 3, tags: str = "") -> bool:
+        """إرسال إلى ntfy (داخلي متزامن)"""
+        if not self.enable_ntfy:
+            return False
+            
+        url = f"https://ntfy.sh/{self.ntfy_topic}"
+        headers = {
+            "Title": title,
+            "Priority": str(priority),
+        }
+        if tags:
+            headers["Tags"] = tags
+            
+        try:
+            r = requests.post(url, data=message.encode('utf-8'), headers=headers, timeout=8)
+            success = r.status_code in (200, 202)
+            if success:
+                logger.info(f"[ntfy] تم الإرسال → {title}")
+            else:
+                logger.warning(f"[ntfy] فشل {r.status_code}: {r.text[:80]}")
+            return success
+        except Exception as e:
+            logger.error(f"[ntfy] خطأ: {e}")
+            return False
+    
+    # ──────────────────────────────────────────────
+    # الدوال العامة التي يستدعيها الكود (محافظ على الأسماء القديمة)
+    # ──────────────────────────────────────────────
+    
+    async def send_signal_alert(self, signal_data: dict) -> bool:
+        symbol = signal_data.get('symbol', 'غير معروف')
+        price = signal_data.get('price', '?')
+        strength = signal_data.get('analysis', {}).get('signal_strength', '?')
+        reason = signal_data.get('reason', '')
         
-        return message
-
-    def _build_heartbeat_message(self) -> str:
-        """بناء رسالة النبضة"""
-        uptime_seconds = time.time() - system_stats["start_time"]
-        hours = int(uptime_seconds // 3600)
-        minutes = int((uptime_seconds % 3600) // 60)
+        message = (
+            f"<b>إشارة بيع - {symbol}</b>\n"
+            f"السعر: {price:.2f}\n"
+            f"قوة: {strength}/10\n"
+            f"الوقت: {datetime.now().strftime('%H:%M:%S')}"
+        )
+        if reason:
+            message += f"\nسبب: {reason[:100]}..."
         
-        executor_status = "✅ متصل" if system_stats["executor_connected"] else "❌ غير متصل"
-        signal_sending_status = "✅ مفعل" if ENABLE_SIGNAL_SENDING else "❌ معطل"
-        trade_execution_status = "✅ مفعل" if EXECUTE_TRADES else "❌ معطل"
+        priority = 5 if strength and int(str(strength)) >= 8 else 4
         
-        total_sell_signals = system_stats["sell_signals"]
+        sent = False
         
-        message = f"""
-💓 **نبضة النظام - ماسح إشارات البيع**
-
-⏱️ **مدة التشغيل:** `{hours} ساعة {minutes} دقيقة`
-🔄 **المسحات الكلية:** `{system_stats["total_scans"]}`
-📨 **إشارات البيع المرسلة:** `{system_stats["total_signals_sent"]}`
-💓 **النبضات المرسلة:** `{system_stats["heartbeats_sent"]}`
-
-📊 **إحصائيات الإشارات:**
-• 🔴 **إشارات بيع:** `{total_sell_signals}`
-
-🔗 **حالة الاتصالات:**
-• 🤖 **البوت المنفذ:** `{executor_status}`
-• 📡 **إرسال الإشارات:** `{signal_sending_status}`
-• 💰 **تنفيذ الصفقات:** `{trade_execution_status}`
-
-🎯 **الإعدادات النشطة:**
-• ⏰ **فاصل المسح:** `{SCAN_INTERVAL} ثانية`
-• 🎯 **عتبة الثقة:** `{CONFIDENCE_THRESHOLD}/10`
-• 📈 **الرموز:** `{', '.join(TRADE_CONFIG['symbols'])}`
-• ⏳ **الإطار الزمني:** `{TRADE_CONFIG['timeframe']}`
-• ⚠️ **النوع:** `إشارات بيع فقط`
-
-🕒 **آخر تحديث:** `{system_stats["last_scan_time"] or "لم يبدأ بعد"}`
-📅 **آخر إشارة بيع:** `{system_stats["last_signal_time"] or "لا توجد"}`
-💓 **آخر نبضة:** `{system_stats["last_heartbeat"] or "لا توجد"}`
-
-✅ **الحالة:** النظام يعمل بشكل طبيعي - جاهز لكشف إشارات البيع
-        """
+        if self.enable_telegram:
+            telegram_ok = await self._send_telegram(message)
+            if telegram_ok:
+                sent = True
         
-        return message
-
-    def _build_startup_message(self) -> str:
-        """بناء رسالة بدء التشغيل"""
-        message = f"""
-🚀 **بدء تشغيل ماسح إشارات البيع v2.0**
-
-🕒 **وقت البدء:** `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`
-🔧 **الإصدار:** `2.0.0 - نظام البيع المتخصص`
-
-🎯 **الإعدادات الأساسية:**
-• 📈 **الرموز:** `{', '.join(TRADE_CONFIG['symbols'])}`
-• ⏰ **الإطار الزمني:** `{TRADE_CONFIG['timeframe']}`
-• ⏱️ **فاصل المسح:** `{SCAN_INTERVAL} ثانية`
-• 🎯 **عتبة الثقة:** `{CONFIDENCE_THRESHOLD}/10`
-• ⚠️ **النوع:** `إشارات بيع فقط`
-
-🔗 **حالة الخدمات:**
-• 🤖 **البوت المنفذ:** `{'مضبوط' if EXECUTOR_BOT_URL else 'غير مضبوط'}`
-• 📡 **إرسال الإشارات:** `{'مفعل' if ENABLE_SIGNAL_SENDING else 'معطل'}`
-• 💰 **تنفيذ الصفقات:** `{'مفعل' if EXECUTE_TRADES else 'معطل'}`
-• 🔔 **إشعارات التلغرام:** `{'مفعل' if ENABLE_TELEGRAM_ALERTS else 'معطل'}`
-• 💓 **النبضات الدورية:** `{'مفعل' if ENABLE_HEARTBEAT else 'معطل'}`
-
-📊 **المؤشرات المستخدمة:**
-• 📊 **RSI (21) - للكشف عن التشبع الشرائي**
-• 📈 **MACD (12,26,9) - للاتجاه الهابط**
-• 📉 **EMA (9,21,50,200) - للمقاومة والاتجاه**
-• 🔊 **تحليل الحجم - لتأكيد البيع**
-• 🎯 **الدعم والمقاومة - لمناطق البيع**
-
-⚡ **مميزات النظام:**
-• 🔍 مسح متعدد الرموز لإشارات البيع فقط
-• 🎯 كشف القمم السعرية ومناطق المقاومة
-• 📡 إرسال تلقائي لإشارات البيع
-• 🔔 إشعارات فورية للبيع
-• 📊 إحصائيات مفصلة للبيع فقط
-
-⚠️ **ملاحظة:** هذا البوت مخصص لإشارات البيع فقط ولا يرسل إشارات شراء
-
-✅ **جاهز للبدء في كشف إشارات البيع...**
-        """
+        if self.enable_ntfy:
+            ntfy_ok = self._send_ntfy(
+                message=message,
+                title=f"إشارة بيع {symbol}",
+                priority=priority,
+                tags="rotating_light,chart_decreasing"
+            )
+            if ntfy_ok:
+                sent = True
         
-        return message
+        return sent
+    
+    async def send_heartbeat(self) -> bool:
+        message = f"Heartbeat • ماسح البيع يعمل • {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        
+        sent = False
+        
+        if self.enable_telegram:
+            if await self._send_telegram(message):
+                sent = True
+        
+        if self.enable_ntfy:
+            if self._send_ntfy(
+                message=message,
+                title="نبضة النظام",
+                priority=2,
+                tags="green_circle,clock"
+            ):
+                sent = True
+        
+        return sent
+    
+    async def send_startup_message(self) -> bool:
+        message = (
+            f"<b>بدء تشغيل ماسح إشارات البيع</b>\n"
+            f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"الإشعارات النشطة: "
+            f"{'Telegram' if self.enable_telegram else ''}"
+            f"{' + ' if self.enable_telegram and self.enable_ntfy else ''}"
+            f"{'ntfy' if self.enable_ntfy else ''}"
+        )
+        
+        sent = False
+        
+        if self.enable_telegram:
+            if await self._send_telegram(message):
+                sent = True
+        
+        if self.enable_ntfy:
+            if self._send_ntfy(
+                message=message,
+                title="بدء التشغيل",
+                priority=3,
+                tags="rocket,gear"
+            ):
+                sent = True
+        
+        return sent            
+
 
 # ====================== عميل البوت المنفذ ======================
 class ExecutorBotClient:
